@@ -106,13 +106,22 @@ test('ORACULO 5 -- classe que nao conjura nao gera entrada: Barbaro 5/Mago 1', a
   assert.equal(trocas[0].classe, 'Mago');
 });
 
-// ORACULO 6 -- subclasse conjuradora gera entrada mesmo com
-// trocaNoDescansoLongo devolvendo null para a classe: um Ladino (Trapaceiro
-// Arcano) de nivel suficiente tem direito a troca. O nivel em que a
-// subclasse passa a conjurar e o 3, MEDIDO em
+// ORACULO 6 -- a subclasse conjuradora gera entrada (ela CONJURA mesmo),
+// mas SEM direito de troca no Descanso Longo: o texto dela amarra a troca a
+// subida de nivel.
+//   Trapaceiro Arcano, Conjuracao: "Ao alcancar um nivel de Ladino, voce
+//   pode substituir um dos seus truques, exceto Maos Magicas, por outro
+//   truque de Mago a sua escolha." e "Sempre que voce atinge um nivel de
+//   Ladino, pode substituir uma magia em sua lista por outra magia de Mago
+//   para a qual voce tem espacos de magia."
+//   Cavaleiro Mistico, Conjuracao: "Sempre que voce atinge um nivel de
+//   Guerreiro, pode substituir um desses truques por outro truque a sua
+//   escolha da lista de magias de Mago."
+// Nenhuma das duas cita Descanso Longo para troca -- so para recuperar
+// espacos. O nivel em que a subclasse passa a conjurar e o 3, MEDIDO em
 // regras-conjuracao-subclasse.js (getConjuracaoSubclasse: "if (nivelAtual <
 // 3) return null"), nao chutado.
-test('ORACULO 6 -- subclasse conjuradora (Trapaceiro Arcano) tem direito mesmo sem a classe conjurar', async () => {
+test('ORACULO 6 -- subclasse conjuradora (Trapaceiro Arcano) conjura mas NAO troca no Descanso Longo', async () => {
   const { regrasPreparoMagias: rpm, multiclasseConjuracao: mc } = await modulosApp();
   assert.equal(rpm.trocaNoDescansoLongo('Ladino'), null,
     'fixture: Ladino puro nao e classe conjuradora -- se isto mudar, o oraculo perde o sentido');
@@ -123,14 +132,53 @@ test('ORACULO 6 -- subclasse conjuradora (Trapaceiro Arcano) tem direito mesmo s
   assert.equal(sup.length, 1, 'fixture: Trapaceiro Arcano nivel 3 ja e superficie de conjuracao');
   const trocas = rpm.trocasDoDescansoLongo(p, sup);
   assert.equal(trocas.length, 1,
-    'Trapaceiro Arcano nivel 3 ja conjura pela tabela da subclasse -- tem de gerar UMA entrada');
+    'Trapaceiro Arcano nivel 3 conjura pela tabela da subclasse -- a superficie existe');
   assert.equal(trocas[0].classe, 'Ladino');
   assert.equal(trocas[0].subclasse, 'Trapaceiro Arcano');
-  assert.equal(trocas[0].podeTrocarMagia, true,
-    'a classe Ladino nao conjura (trocaNoDescansoLongo devolve null), mas a SUBCLASSE conjura -- ' +
-    'o direito tem que vir dela, nao da classe');
-  assert.equal(trocas[0].podeTrocarTruque, true,
-    'mesma elegibilidade da troca de magia: toda classe/subclasse conjuradora troca truque tambem');
+  assert.equal(trocas[0].podeTrocarMagia, false,
+    'a troca do Trapaceiro Arcano e "ao alcancar um nivel de Ladino", nao no Descanso Longo');
+  assert.equal(trocas[0].podeTrocarTruque, false,
+    'o truque segue a mesma regra do livro -- e fica fora da regra da casa de 2026-08-13, ' +
+    'que so afrouxa quem o livro ja deixa trocar magia no descanso');
+});
+
+// ORACULO 6b -- o mesmo para o Cavaleiro Mistico, a outra subclasse
+// conjuradora: a regra e identica e o codigo trata as duas pela MESMA
+// constante (SUBCLASSES_CONJURADORAS), entao o oraculo cobre as duas para
+// uma mudanca so nunca passar despercebida numa delas.
+test('ORACULO 6b -- Cavaleiro Mistico tambem nao troca magia nem truque no Descanso Longo', async () => {
+  const { regrasPreparoMagias: rpm, multiclasseConjuracao: mc } = await modulosApp();
+  assert.equal(rpm.trocaNoDescansoLongo('Guerreiro'), null,
+    'fixture: Guerreiro puro nao e classe conjuradora');
+  const p = await personagemMulticlasse([
+    { classe: 'Guerreiro', nivel: 3, subclasse: 'Cavaleiro Místico' },
+  ]);
+  const sup = mc.superficiesDeConjuracao(p);
+  assert.equal(sup.length, 1, 'fixture: Cavaleiro Mistico nivel 3 ja e superficie de conjuracao');
+  const trocas = rpm.trocasDoDescansoLongo(p, sup);
+  assert.equal(trocas[0].subclasse, 'Cavaleiro Místico');
+  assert.equal(trocas[0].podeTrocarMagia, false);
+  assert.equal(trocas[0].podeTrocarTruque, false);
+});
+
+// ORACULO 6c -- a exclusao e DA SUBCLASSE, nao do personagem: um Guerreiro
+// Cavaleiro Mistico que tambem tem niveis de Mago continua trocando pela
+// superficie do MAGO. Sem este caso, "bloquear a subclasse" poderia ter
+// sido implementado olhando o personagem inteiro e tiraria a troca legitima
+// da outra classe.
+test('ORACULO 6c -- Cavaleiro Mistico multiclasse com Mago mantem a troca da superficie do Mago', async () => {
+  const { regrasPreparoMagias: rpm, multiclasseConjuracao: mc } = await modulosApp();
+  const p = await personagemMulticlasse([
+    { classe: 'Guerreiro', nivel: 3, subclasse: 'Cavaleiro Místico' },
+    { classe: 'Mago', nivel: 3, subclasse: 'Evocador' },
+  ]);
+  const sup = mc.superficiesDeConjuracao(p);
+  const trocas = rpm.trocasDoDescansoLongo(p, sup);
+  const guerreiro = trocas.find((t) => t.classe === 'Guerreiro');
+  const mago = trocas.find((t) => t.classe === 'Mago');
+  assert.equal(guerreiro.podeTrocarMagia, false, 'a superficie do Cavaleiro Mistico continua sem troca');
+  assert.equal(mago.podeTrocarMagia, true, 'a superficie do Mago troca normalmente no Descanso Longo');
+  assert.equal(mago.podeTrocarTruque, true, 'o Mago troca truque no Descanso Longo pelo proprio livro');
 });
 
 // ORACULO 7 -- entradas degeneradas: `superficies` null, undefined,

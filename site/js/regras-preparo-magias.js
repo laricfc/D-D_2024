@@ -138,17 +138,26 @@ export function trocaAoAvancarNivel(classe) {
 export function trocasDoDescansoLongo(personagem, superficies) {
   if (!Array.isArray(superficies)) return [];
   return superficies.map((s) => {
-    // Cavaleiro Místico e Trapaceiro Arcano conjuram pela característica da
-    // SUBCLASSE, não da classe -- `trocaNoDescansoLongo(classe)` devolve
-    // `null` para Guerreiro e Ladino DE PROPÓSITO (ver docblock dela, acima),
-    // porque a regra deles vem do texto da subclasse. Checar o NOME da
-    // subclasse contra `SUBCLASSES_CONJURADORAS` basta aqui, sem recalcular
-    // `getConjuracaoSubclasse(classe, subclasse, nivel)`: `superficies` já
-    // veio filtrada por `superficiesDeConjuracao`, que só inclui uma entrada
-    // de Guerreiro/Ladino quando a subclasse conjura de verdade NAQUELE
-    // nível -- o teste de nível já foi feito por quem montou a superfície.
+    // Cavaleiro Místico e Trapaceiro Arcano NÃO trocam no Descanso Longo:
+    // conjuram pela característica da SUBCLASSE, e o texto dela amarra a
+    // troca à SUBIDA DE NÍVEL, não ao descanso -- "Sempre que você atinge um
+    // nível de Guerreiro, pode substituir um desses truques..." (Conjuração,
+    // Cavaleiro Místico) e "Ao alcançar um nível de Ladino, você pode
+    // substituir um dos seus truques... / Sempre que você atinge um nível de
+    // Ladino, pode substituir uma magia em sua lista..." (Conjuração,
+    // Trapaceiro Arcano). Por isso `trocaNoDescansoLongo(classe)` devolve
+    // `null` para Guerreiro e Ladino, e aqui NÃO há exceção que reponha o
+    // direito pelo nome da subclasse: a troca deles acontece no fluxo de
+    // subida de nível (levelup-flow.js, step `selecao_magias`, que já lê
+    // `preparadasPorClasse`/`truquesPorClasse` da classe que sobe).
+    //
+    // Isto também põe as duas subclasses FORA da regra da casa de
+    // 2026-08-13, que estendeu a troca de truque no descanso a toda classe
+    // conjuradora (ver `avisoTrocaTruqueForaDoLivro`): a regra da casa
+    // afrouxa o livro para quem ELE deixa trocar magia no descanso, e
+    // Cavaleiro Místico/Trapaceiro Arcano não são esse caso.
     const porSubclasseConjuradora = SUBCLASSES_CONJURADORAS.includes(s.subclasse);
-    const podeTrocarMagia = trocaNoDescansoLongo(s.classe) === 'uma' || porSubclasseConjuradora;
+    const podeTrocarMagia = !porSubclasseConjuradora && trocaNoDescansoLongo(s.classe) === 'uma';
     return {
       classe: s.classe,
       subclasse: s.subclasse,
@@ -160,7 +169,8 @@ export function trocasDoDescansoLongo(personagem, superficies) {
       // Decisão do dono do produto (2026-08-13, ver docblock de
       // mostrarTrocaTruque em sheet/grimorio.js): a troca de truque no
       // Descanso Longo vale para toda classe conjuradora, na MESMA
-      // elegibilidade da troca de magia -- por isso a mesma condição.
+      // elegibilidade da troca de magia -- por isso a mesma condição, que
+      // agora também exclui as duas subclasses conjuradoras.
       // `truquesTrocaveis()` (sheet/grimorio.js) decide se HÁ candidata; até
       // aqui só o direito.
       podeTrocarTruque: podeTrocarMagia,
