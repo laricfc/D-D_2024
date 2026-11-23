@@ -142,9 +142,14 @@ test('todo antecedente do catálogo existe em dados/ (sem órfãos)', () => {
   assert.deepEqual(orfaos, [], `órfãos no catálogo: ${orfaos.join(', ')}`);
 });
 
-test('completude: os 16 antecedentes do livro estão cobertos, sem amostragem', () => {
-  assert.equal(nomesCatalogo.size, 16, `catálogo tem ${nomesCatalogo.size} entradas, esperado 16`);
-  assert.equal(nomesDados.size, 16, `dados/ tem ${nomesDados.size} entradas, esperado 16`);
+// 16 do Livro do Jogador + Herói do Povo (adaptação do antecedente de
+// 2014 para a forma de 2024, acrescentada em 2026-11-22 a pedido do dono
+// do produto). O número continua FECHADO de propósito: o valor deste
+// teste é não deixar entrar antecedente sem oráculo -- por isso ele sobe
+// junto com a entrada no catálogo, e nunca vira "maior ou igual".
+test('completude: os 17 antecedentes estão cobertos, sem amostragem', () => {
+  assert.equal(nomesCatalogo.size, 17, `catálogo tem ${nomesCatalogo.size} entradas, esperado 17`);
+  assert.equal(nomesDados.size, 17, `dados/ tem ${nomesDados.size} entradas, esperado 17`);
 });
 
 for (const [nome, e] of Object.entries(CATALOGO_ANTECEDENTES)) {

@@ -447,6 +447,22 @@ export const ANTECEDENTES_ESCOLHAS = {
       'Ferramentas de Marceneiro', 'Ferramentas de Entalhador'
     ]
   },
+  // Herói do Povo escolhe uma Ferramenta de Artesão, igual ao Artesão --
+  // mesmo campo e mesma lista, para a ficha e o passo de equipamento
+  // lerem a escolha pelo caminho que já existe.
+  'Herói do Povo': {
+    titulo: 'Ferramenta de Artesão',
+    descricao: 'Escolha um tipo de Ferramenta de Artesão:',
+    campo: 'ferramenta_escolhida',
+    opcoes: [
+      'Suprimentos de Alquimista', 'Suprimentos de Cervejeiro', 'Suprimentos de Calígrafo',
+      'Ferramentas de Carpinteiro', 'Ferramentas de Cartógrafo', 'Ferramentas de Sapateiro',
+      'Ferramentas de Ferreiro', 'Ferramentas de Funileiro', 'Utensílios de Cozinheiro',
+      'Ferramentas de Vidreiro', 'Ferramentas de Joalheiro', 'Ferramentas de Pedreiro',
+      'Ferramentas de Pintor', 'Ferramentas de Oleiro', 'Ferramentas de Tecelão',
+      'Ferramentas de Marceneiro', 'Ferramentas de Entalhador'
+    ]
+  },
   'Artista': {
     titulo: 'Instrumento Musical',
     descricao: 'Escolha um Instrumento Musical:',

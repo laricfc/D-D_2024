@@ -13,13 +13,53 @@
 // ============================================================
 
 /** Versão exibida no header e marcada como atual na lista de notas. */
-export const VERSAO_ATUAL = '3.4.1';
+export const VERSAO_ATUAL = '3.4.2';
 
 // Cada entrada é uma versão. `melhorias` e `correcoes` são listas de
 // grupos, e cada grupo tem um título curto e seus itens. O emoji do
 // grupo entra no próprio título -- é o que separa visualmente melhoria
 // de correção sem depender de cor.
 export const NOTAS_VERSAO = [
+  {
+    versao: '3.4.2',
+    data: '2026-11-22',
+    rotulo: 'Herói do Povo',
+    resumo: 'O antecedente Herói do Povo, da 5ª edição de 2014, adaptado para '
+      + 'as regras de 2024, e a campanha compartilhada: mesa com as fichas '
+      + 'dos jogadores atualizando ao vivo para o mestre.',
+    melhorias: [
+      {
+        grupo: '✨ Melhorias',
+        itens: [
+          'Novo antecedente: Herói do Povo, adaptado da edição de 2014 para a '
+            + 'forma de 2024 — Força, Constituição e Carisma, talento de origem '
+            + 'Vigoroso, perícias Lidar com Animais e Sobrevivência, e uma '
+            + 'Ferramenta de Artesão à escolha.',
+          'Campanhas: crie uma mesa, envie seu personagem para ela e acompanhe '
+            + 'as fichas dos outros jogadores. O mestre vê PV, CA e condições '
+            + 'mudarem ao vivo, abre a ficha inteira de cada um e aplica dano '
+            + 'ou cura direto da mesa.',
+          'Painel Meu Turno sem Modo Combate: tocar na opção abre a regra, pede '
+            + 'confirmação e desconta o custo — a faixa do turno, o espaço de '
+            + 'magia e o uso da característica, no mesmo contador que os chips '
+            + 'da ficha já usam.',
+        ],
+      },
+    ],
+    correcoes: [
+      {
+        grupo: '🐛 Correções',
+        itens: [
+          'Cavaleiro Místico e Trapaceiro Arcano não trocam mais magia nem '
+            + 'truque no Descanso Longo: pelo livro, a troca dessas subclasses '
+            + 'acontece ao subir de nível.',
+          'Painel Meu Turno: "Usar Magia" e as magias sem espaço disponível '
+            + 'aparecem desabilitadas, com o motivo; e o painel não lista mais '
+            + 'opções de subclasses que o personagem não tem.',
+        ],
+      },
+    ],
+  },
   {
     versao: '3.4.1',
     data: '2026-11-08',

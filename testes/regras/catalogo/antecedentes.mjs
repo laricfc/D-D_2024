@@ -193,6 +193,31 @@ export const CATALOGO_ANTECEDENTES = {
       },
     },
   },
+  // Herói do Povo: adaptação do antecedente de 2014 para a forma de 2024
+  // (valores de atributo + talento de origem + 2 perícias + 1 ferramenta),
+  // acrescentada a pedido do dono do produto em 2026-11-22. A seção
+  // §Herói do Povo precisa existir em `Informacoes Separadas/
+  // Antecedente.md` -- a citação abaixo é conferida contra os títulos
+  // reais daquele arquivo, não só contra o formato.
+  'Herói do Povo': {
+    livro: 'Antecedente.md §Herói do Povo',
+    atributos: ['forca', 'constituicao', 'carisma'],
+    // Vigoroso por decisão do dono do produto (2026-11-22). Não há talento
+    // canônico: Herói do Povo não existe no Livro do Jogador de 2024, e a
+    // regra de conversão de antecedente legado manda escolher QUALQUER
+    // talento de origem -- então aqui o catálogo registra uma escolha, não
+    // um fato do livro.
+    talento: 'Vigoroso',
+    pericias: ['Lidar com Animais', 'Sobrevivência'],
+    ferramenta: { tipo: 'categoria', categoria: CATEGORIA_FERRAMENTA.ARTESAO },
+    equipamento: {
+      poAlternativo: 50,
+      pacote: {
+        itens: ['Ferramentas de Artesão', 'Pá', 'Panela de Ferro', 'Roupas Comuns'],
+        ouroIncluido: 10,
+      },
+    },
+  },
   'Guarda': {
     livro: 'Antecedente.md §Guarda',
     atributos: ['forca', 'inteligencia', 'sabedoria'],
