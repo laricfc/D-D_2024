@@ -6,15 +6,25 @@
 import { podeSobrescreverNuvem } from './sync-merge.js';
 import { normalizarTabelasInventario } from './regras-tabelas-item.js';
 
-// Configuracao do projeto Firebase (produção)
+// Configuracao do projeto Firebase (produção).
+//
+// NÃO é segredo: este bloco é servido dentro do JavaScript que qualquer
+// visitante baixa, e é assim por design no Firebase. Quem protege os
+// dados são as regras em `firestore.rules`, aplicadas no servidor -- a
+// apiKey só identifica o projeto.
+//
+// Projeto `dnd24-fichas` (conta de laricfc), 2026-11-22. O projeto
+// anterior (`ded2024`) era do dono original do repositório e não é
+// acessível por este; fichas que estavam na nuvem DELE não vêm junto --
+// a migração é exportar/importar pela tela inicial.
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyBlk6l-yuMQpC080fOsN4NC4mB5pbyY7VA",
-  authDomain: "ded2024.firebaseapp.com",
-  projectId: "ded2024",
-  storageBucket: "ded2024.firebasestorage.app",
-  messagingSenderId: "360073497668",
-  appId: "1:360073497668:web:34377bc83947cbb7018011",
-  measurementId: "G-RET2BV4Z36"
+  apiKey: "AIzaSyB05lXDX7SBzOnSTOpooh6dYXx3GwOJEDE",
+  authDomain: "dnd24-fichas.firebaseapp.com",
+  projectId: "dnd24-fichas",
+  storageBucket: "dnd24-fichas.firebasestorage.app",
+  messagingSenderId: "838700886129",
+  appId: "1:838700886129:web:f7e831b316689e358693d0",
+  measurementId: "G-TG7PMWS8LX"
 };
 
 let _app = null;
@@ -69,6 +79,25 @@ export function getUsuario() {
 /** Retorna true se o Firebase foi inicializado com sucesso */
 export function firebaseDisponivel() {
   return _inicializado;
+}
+
+/**
+ * Instância do Firestore, para os módulos que falam com coleções FORA de
+ * `users/{uid}/personagens` -- hoje só `campanha.js`, que escreve no
+ * espaço COMPARTILHADO (`campanhas/...`). As operações da ficha privada
+ * continuam neste arquivo: quem precisa do `_db` para mexer em
+ * `users/{uid}` está no lugar errado.
+ * @returns {object|null} null enquanto o Firebase não inicializou.
+ */
+export function getDb() {
+  return _db;
+}
+
+/** Os módulos do Firestore, carregados sob demanda do mesmo CDN e na
+ *  mesma versão que este arquivo usa -- duas versões do SDK na página
+ *  criariam duas instâncias de app. */
+export function getFirestoreModules() {
+  return _getFirestoreModules();
 }
 
 /** Login com Google via popup */

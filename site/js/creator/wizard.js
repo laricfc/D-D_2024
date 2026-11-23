@@ -584,9 +584,32 @@ async function finalizar() {
       rolagens: dadosCache.attrMode === 'rolagem' ? { ...(dadosCache.rolagemValores || {}) } : null
     }
   };
+  // "Criar uma ficha" a partir de uma campanha deixa o destino gravado
+  // aqui (pages/campanhas.js). Vincular ANTES de salvar faz a própria
+  // gravação já publicar na mesa (store.js -> publicarNaCampanha), em vez
+  // de exigir que o jogador lembre de enviar depois.
+  const destinoCampanha = lerDestinoDeCampanha();
+  if (destinoCampanha) personagem.campanha_id = destinoCampanha;
+
   salvarPersonagem(personagem);
-  toast('Personagem criado com sucesso!', 'success');
+  toast(destinoCampanha ? 'Personagem criado e enviado para a campanha!' : 'Personagem criado com sucesso!', 'success');
   window.navegar(`ficha/${personagem.id}`);
+}
+
+/**
+ * Lê (e consome) a campanha de destino escolhida em "Criar uma ficha".
+ * Consome porque a intenção vale para UM personagem: sem apagar, todo
+ * personagem criado depois entraria na mesma mesa sem ninguém pedir.
+ * @returns {string} Id da campanha, ou '' quando a criação é avulsa.
+ */
+function lerDestinoDeCampanha() {
+  try {
+    const id = localStorage.getItem('campanha_destino_novo_personagem') || '';
+    if (id) localStorage.removeItem('campanha_destino_novo_personagem');
+    return id;
+  } catch {
+    return '';
+  }
 }
 
 // --- Setters -------------------------------------------------------------

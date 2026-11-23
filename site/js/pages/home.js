@@ -9,6 +9,7 @@ import { classesDe } from '../regras-multiclasse.js';
 import { iniciarAuth, getUsuario, loginComGoogle, logout, onAuthChange, buscarEstadoCloud } from '../auth.js';
 import { reconciliar, escolherNoMerge } from '../sync-merge.js';
 import { mostrarResultadoImportacao } from '../importacao-ui.js';
+import { renderSecaoCampanhas, setupEventosCampanhas } from './campanhas.js';
 
 let _containerRef = null;
 let _sincronizando = false;
@@ -77,6 +78,7 @@ function _renderConteudo(container, personagens, usuario) {
   if (personagens.length === 0) {
     container.innerHTML = `
       ${contaHtml}
+      ${renderSecaoCampanhas()}
       <div class="empty-state">
         <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#7b2d26" stroke-width="1.5">
           <path d="M12 2L2 7l10 5 10-5-10-5z"/>
@@ -95,6 +97,7 @@ function _renderConteudo(container, personagens, usuario) {
     `;
     _setupAuthEvents(container);
     setupImportar(container);
+    setupEventosCampanhas(container);
 
     // Sincronizar automaticamente ao renderizar a home se logado
     _sincronizarSeLogado(container);
@@ -103,6 +106,7 @@ function _renderConteudo(container, personagens, usuario) {
 
   container.innerHTML = `
     ${contaHtml}
+    ${renderSecaoCampanhas()}
     <div class="flex justify-between items-center mb-1" style="flex-wrap:wrap;gap:8px">
       <div class="flex items-center" style="gap:10px">
         <h2 style="font-size:1.1rem;color:var(--text)">Meus Personagens</h2>
@@ -189,6 +193,7 @@ function _renderConteudo(container, personagens, usuario) {
 
   setupImportar(container);
   _setupAuthEvents(container);
+  setupEventosCampanhas(container);
 
   // Sincronizar automaticamente ao renderizar a home se logado
   _sincronizarSeLogado(container);

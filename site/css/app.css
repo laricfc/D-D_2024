@@ -1301,6 +1301,214 @@ tr:hover td { background: #faf8f4; }
 }
 
 /* ============================================================
+   PAINEL MEU TURNO (economia de ações)
+   ============================================================ */
+
+/* FAB do painel: empilhado ACIMA do de descanso (52px do botão + 12 de
+   respiro), para os dois não disputarem o mesmo canto no celular. */
+.fab-acoes {
+  position: fixed;
+  bottom: 84px;
+  right: 20px;
+  z-index: 100;
+  padding-bottom: var(--safe-bottom);
+}
+/* Turno em andamento (Ação, Bônus ou Reação já gasta): o botão muda de cor
+   para o jogador lembrar que tem marca aberta sem precisar abrir o painel.
+   Substitui o destaque do antigo Modo Combate, que não existe mais -- o
+   gasto agora vem da confirmação de cada opção. */
+.fab-btn-turno-gasto {
+  background: var(--danger);
+  animation: pulseCombate 2s ease-in-out infinite;
+}
+@keyframes pulseCombate {
+  0%, 100% { box-shadow: var(--shadow-lg); }
+  50% { box-shadow: 0 0 0 6px rgba(192, 57, 43, 0.25), var(--shadow-lg); }
+}
+
+.painel-turno-topo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.painel-turno-resumo {
+  flex: 1 1 200px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+.painel-turno-condicoes {
+  border-left: 3px solid var(--warning);
+  background: rgba(193, 122, 0, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  font-size: 0.78rem;
+}
+.painel-turno-condicoes ul { margin: 4px 0 0; padding-left: 18px; }
+.painel-turno-condicoes li { margin-bottom: 2px; }
+/* ---- Popup de confirmação de uma opção do turno ---- */
+
+/* O que a confirmação vai gastar, antes da descrição: é a informação que
+   decide o clique, então vem primeiro e com peso. */
+.acao-pop-custo {
+  font-size: 0.82rem;
+  line-height: 1.5;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--accent);
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: var(--radius-sm);
+}
+.acao-pop-custo-livre { border-left-color: var(--success); }
+.acao-pop-aviso {
+  font-size: 0.8rem;
+  line-height: 1.45;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--danger);
+  background: rgba(192, 57, 43, 0.06);
+  border-radius: var(--radius-sm);
+}
+/* Faixa já gasta não é erro: a regra pode ter dado outra ação (Surto de
+   Ação). Aviso em tom de atenção, com o botão ainda disponível. */
+.acao-pop-aviso-leve {
+  border-left-color: var(--warning);
+  background: rgba(193, 122, 0, 0.08);
+}
+/* Descrição do livro: `pre-wrap` porque o texto vem com as quebras do
+   acervo e é interpolado escapado, nunca como HTML. */
+.acao-pop-texto {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* Escolha do espaço de magia: chips curtos, porque a opção é um valor
+   curto (círculo + reserva) e cabe lado a lado no celular. */
+.acao-espacos { margin: 0 0 10px; }
+.acao-espacos-rotulo {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.acao-espacos-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.acao-espaco-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 6px 10px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-card);
+  cursor: pointer;
+}
+.acao-espaco-chip-sel {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+.acao-espaco-saldo { font-size: 0.66rem; font-weight: 500; opacity: 0.8; }
+
+.acao-faixa {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  margin-bottom: 10px;
+}
+.acao-faixa-topo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.acao-faixa-topo h3 {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 0;
+  flex: 1;
+}
+/* Faixa já gasta na rodada: esmaecida, mas ainda legível e clicável --
+   o jogador continua podendo abrir a descrição do que ele acabou de usar. */
+.acao-faixa-gasta { opacity: 0.45; }
+.acao-faixa-gasta .acao-faixa-topo h3 { text-decoration: line-through; }
+/* Faixa bloqueada por condição: o conteúdo não some, mas fica claro que a
+   regra não permite usar agora. */
+.acao-faixa-bloqueada {
+  border-color: var(--danger);
+  background: rgba(192, 57, 43, 0.04);
+}
+.acao-selo-bloqueio {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--danger);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.acao-faixa-motivo,
+.acao-faixa-vazia {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  margin: 0 0 6px;
+  line-height: 1.4;
+}
+
+.acao-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px;
+}
+.acao-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.acao-card:active { transform: scale(0.97); }
+.acao-card:hover { border-color: var(--primary); }
+/* Opção que o personagem não pode executar agora (magia sem espaço, "Usar
+   Magia" sem nada para conjurar): inerte, e o subtítulo diz o motivo. Fica
+   visível, não some -- sumir esconderia do jogador que a magia existe. */
+.acao-card-off,
+.acao-card:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: var(--bg-input, rgba(0, 0, 0, 0.03));
+}
+.acao-card-off:active { transform: none; }
+.acao-card-off:hover { border-color: var(--border-light); }
+.acao-card-off .acao-card-sub { font-style: italic; }
+.acao-card-nome { font-size: 0.8rem; font-weight: 600; line-height: 1.25; }
+.acao-card-sub { font-size: 0.66rem; color: var(--text-muted); line-height: 1.2; }
+
+/* Celular (390px): uma coluna, para o nome da magia não quebrar no meio. */
+@media (max-width: 420px) {
+  .acao-cards { grid-template-columns: 1fr 1fr; }
+}
+
+/* ============================================================
    ESTILOS DE IMPRESSÃO / PDF
    ============================================================ */
 
@@ -2352,4 +2560,178 @@ tr:hover td { background: #faf8f4; }
   background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 12px;
   padding: 14px; width: min(480px, 100%); max-height: 80vh; overflow-y: auto;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+/* ============================================================
+   CAMPANHA (mesa compartilhada)
+   ============================================================ */
+
+.campanha-bloco { padding: 0; margin-bottom: 12px; }
+.campanha-sumario {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  list-style: none;
+}
+.campanha-sumario::-webkit-details-marker { display: none; }
+.campanha-sumario-resumo { font-size: 0.72rem; font-weight: 500; color: var(--text-muted); }
+.campanha-conteudo { padding: 0 14px 14px; }
+.campanha-acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.campanha-aviso {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0 0 8px;
+}
+.campanha-erro {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--danger);
+  background: rgba(192, 57, 43, 0.06);
+  border-radius: var(--radius-sm);
+}
+.campanha-rotulo {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+/* Lista de campanhas e de fichas para enviar: cards, nunca dropdown --
+   cada entrada tem nome e um segundo dado (papel, classe). */
+.campanha-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.campanha-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  cursor: pointer;
+}
+.campanha-card:hover { border-color: var(--primary); }
+.campanha-card-nome { font-size: 0.85rem; font-weight: 600; }
+.campanha-card-sub { font-size: 0.68rem; color: var(--text-muted); }
+
+/* Código de convite: ditado em voz alta na mesa, então grande e espaçado. */
+.campanha-codigo {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 1.8rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-align: center;
+  padding: 14px;
+  margin: 10px 0;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius);
+  user-select: all;
+}
+.campanha-codigo-campo { font-family: ui-monospace, Consolas, monospace; letter-spacing: 0.16em; text-transform: uppercase; }
+.campanha-codigo-inline {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-input);
+  user-select: all;
+}
+
+.campanha-mesa-topo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.campanha-papel { font-weight: 600; }
+.campanha-fichas { display: flex; flex-direction: column; gap: 8px; }
+.campanha-ficha {
+  border: 1px solid var(--border-light);
+  border-left-width: 4px;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+/* Faixa de PV: o mestre varre essa lista no meio do combate, então a cor
+   diz de longe quem está em perigo. */
+.campanha-ficha-ok { border-left-color: var(--success); }
+.campanha-ficha-atencao { border-left-color: var(--warning); }
+.campanha-ficha-perigo { border-left-color: var(--danger); }
+.campanha-ficha-morto { border-left-color: var(--text-muted); opacity: 0.7; }
+.campanha-ficha-cabeca { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.campanha-ficha-classe { font-size: 0.72rem; color: var(--text-muted); }
+.campanha-ficha-numeros { display: flex; gap: 12px; margin-top: 4px; font-size: 0.8rem; font-weight: 600; }
+.campanha-ca { color: var(--text-muted); font-weight: 500; }
+.campanha-condicoes { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.campanha-condicao {
+  font-size: 0.66rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--warning);
+  color: #fff;
+}
+.campanha-ficha-acoes { display: flex; gap: 6px; margin-top: 8px; }
+
+@media (max-width: 420px) {
+  .campanha-cards { grid-template-columns: 1fr; }
+}
+
+/* ---- Páginas de campanha (catálogo e mesa) ---- */
+.campanha-pagina-topo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.campanha-pagina-topo h2 { font-size: 1.15rem; margin: 0; }
+.campanha-grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+.campanha-cartao {
+  border: 1px solid var(--border-light);
+  border-left-width: 4px;
+  border-left-color: var(--border-light);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.campanha-cartao-cabeca { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.campanha-cartao-cabeca h3 { font-size: 0.95rem; margin: 0; }
+.campanha-cartao-sub { font-size: 0.74rem; color: var(--text-muted); margin: 0; }
+.campanha-etiqueta {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+}
+.campanha-cartao-acoes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 6px; }
+
+@media (max-width: 420px) {
+  .campanha-grade { grid-template-columns: 1fr; }
 }

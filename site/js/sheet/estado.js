@@ -27,14 +27,45 @@ export let passivosTalentosCache = null;
 
 let _abrindoFicha = false;
 
+// Id da campanha quando a ficha aberta veio de uma MESA, não da lista
+// local deste aparelho (o mestre abrindo a ficha de um jogador, ou o
+// jogador abrindo a cópia da mesa). Null na abertura normal.
+let _campanhaDaFicha = null;
+
 /** Liga o modo "abrindo ficha": as gravações das migrações não carimbam nem enviam à nuvem. */
 export function iniciarAberturaFicha() { _abrindoFicha = true; }
 
 /** Desliga o modo "abrindo ficha"; gravações seguintes voltam a carimbar e sincronizar. */
 export function concluirAberturaFicha() { _abrindoFicha = false; }
 
-/** Persiste a ficha aberta (preserva o carimbo enquanto a ficha está abrindo). */
+/**
+ * Marca que a ficha aberta pertence a uma campanha, e não a este
+ * aparelho. Chamada por `renderSheet` ao abrir pela mesa; `null` ao
+ * abrir uma ficha local.
+ */
+export function definirCampanhaDaFicha(campanhaId) { _campanhaDaFicha = campanhaId || null; }
+
+/** A campanha da ficha aberta, ou null. */
+export function campanhaDaFicha() { return _campanhaDaFicha; }
+
+/**
+ * Persiste a ficha aberta (preserva o carimbo enquanto a ficha está abrindo).
+ *
+ * Em modo campanha grava SÓ na mesa. Cair no `salvarPersonagem` aqui
+ * copiaria a ficha do jogador para a lista local do mestre e para a
+ * nuvem PRIVADA dele (`users/{uid}/personagens`) -- ele passaria a ter
+ * um personagem que não é dele, e que voltaria a aparecer em todos os
+ * aparelhos dele. É o motivo de este desvio existir.
+ */
 export function salvar() {
+  if (_campanhaDaFicha) {
+    char.atualizado_em = new Date().toISOString();
+    // Import tardio: estado.js é carregado por quase tudo em sheet/, e
+    // campanha.js puxa o SDK do Firebase -- quem nunca abre uma ficha de
+    // mesa não paga esse download.
+    import('../campanha.js').then(({ enviarPersonagem }) => enviarPersonagem(_campanhaDaFicha, char));
+    return;
+  }
   salvarPersonagem(char, { preservarCarimbo: _abrindoFicha });
 }
 

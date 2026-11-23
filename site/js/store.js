@@ -3,6 +3,7 @@
 // ============================================================
 import { gerarId, normalizarGrimorioMago } from './utils.js';
 import { enfileirarSync, enfileirarRemocao } from './sync.js';
+import { publicarNaCampanha } from './campanha.js';
 import { criarCarteiraVazia, normalizarCarteira, definirTaxas, resetarTaxas } from './moedas.js';
 
 const STORAGE_KEY = 'dnd_personagens';
@@ -123,6 +124,11 @@ export function salvarPersonagem(personagem, opcoes = {}) {
 
   // Enfileirar sync na nuvem (processa se logado e online, aguarda caso contrário)
   enfileirarSync(personagem);
+  // Espelhar na mesa, quando a ficha está vinculada a uma campanha. É o
+  // que faz a tela do mestre mudar sozinha conforme o jogador edita --
+  // sem isso a cópia da campanha fica congelada no momento do envio.
+  // No-op (e barato) para quem não está em campanha nenhuma.
+  publicarNaCampanha(personagem);
 
   return personagem;
 }

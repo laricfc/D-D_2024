@@ -1,0 +1,130 @@
+rules_version = '2';
+
+// ============================================================
+// Regras de seguranca do Firestore do projeto `ded2024`.
+//
+// ESTE ARQUIVO NAO TEM EFEITO SOZINHO. Ele precisa ser publicado no
+// console do Firebase (Firestore Database > Regras > Publicar), ou por
+// `firebase deploy --only firestore:rules`. Enquanto nao for publicado, o
+// app continua com as regras antigas e a campanha responde
+// "permission denied".
+//
+// Dois espacos de dados, com donos diferentes:
+//
+//  users/{uid}/personagens/{id}
+//    A ficha privada, como sempre foi: so o dono le e escreve. Nada aqui
+//    muda esse comportamento.
+//
+//  campanhas/{campanhaId}/...
+//    O espaco COMPARTILHADO. Entrar numa campanha e um ato do JOGADOR
+//    (ele cria a propria inscricao e envia a propria ficha) -- o mestre
+//    nunca puxa ficha de ninguem. Membro le as fichas da campanha; so o
+//    dono da ficha e o mestre escrevem nela.
+//
+//  convites/{codigo}
+//    So traduz o codigo de convite no id da campanha. Qualquer pessoa
+//    logada pode LER um codigo (e assim entrar), porque sem isso nao ha
+//    como entrar numa campanha cujo id voce nao conhece. O codigo e
+//    aleatorio e o mestre pode troca-lo; quem tiver o codigo entra.
+// ============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function logado() {
+      return request.auth != null;
+    }
+
+    function ehMembro(campanhaId) {
+      return logado() && exists(
+        /databases/$(database)/documents/campanhas/$(campanhaId)/membros/$(request.auth.uid)
+      );
+    }
+
+    function ehMestre(campanhaId) {
+      return logado() && get(
+        /databases/$(database)/documents/campanhas/$(campanhaId)
+      ).data.mestre_uid == request.auth.uid;
+    }
+
+    // ---------- Ficha privada (comportamento de sempre) ----------
+    match /users/{uid}/personagens/{personagemId} {
+      allow read, write: if logado() && request.auth.uid == uid;
+    }
+
+    // ---------- Campanha ----------
+    match /campanhas/{campanhaId} {
+      // CATALOGO ABERTO -- decisao do dono do produto (2026-11-22), tomada
+      // depois de avisado o efeito: qualquer pessoa logada LISTA e LE
+      // todas as campanhas, e (ver /membros abaixo) entra em qualquer uma
+      // sem convite. Como entrar da acesso de leitura as fichas da mesa,
+      // na pratica isso torna QUALQUER ficha enviada a uma campanha
+      // legivel por QUALQUER usuario do app.
+      //
+      // O documento da campanha so tem nome, mestre e codigo -- nenhuma
+      // ficha. O que expoe as fichas e o auto-ingresso, nao esta leitura.
+      //
+      // Para voltar atras: `get` volta a `ehMembro(campanhaId)`, `list` a
+      // `false`, e o ingresso volta a depender do codigo em /convites.
+      allow get, list: if logado();
+      // Quem cria e o mestre, e nao pode se declarar mestre de outro uid.
+      allow create: if logado() && request.resource.data.mestre_uid == request.auth.uid;
+      allow update, delete: if ehMestre(campanhaId);
+    }
+
+    match /campanhas/{campanhaId}/membros/{uid} {
+      allow read: if ehMembro(campanhaId);
+      // Auto-inscricao: cada um cria A PROPRIA entrada.
+      //
+      // O papel 'mestre' so e aceito de quem JA e o mestre no documento da
+      // campanha (`ehMestre` le `mestre_uid` de la, que por sua vez so
+      // pode ter sido gravado como o proprio uid na criacao). Sem essa
+      // alternativa, a regra barrava o mestre de se inscrever na mesa que
+      // ele mesmo acabou de criar -- `criarCampanha` grava a inscricao
+      // dele com papel 'mestre' logo depois de criar a campanha.
+      //
+      // Qualquer outra pessoa so entra como 'jogador': continua
+      // impossivel se promover editando o proprio documento, que era o
+      // ataque que esta regra existe para impedir.
+      allow create: if logado()
+        && request.auth.uid == uid
+        && request.resource.data.uid == uid
+        && (
+          request.resource.data.papel == 'jogador'
+          || (request.resource.data.papel == 'mestre' && ehMestre(campanhaId))
+        );
+      allow update: if logado() && request.auth.uid == uid;
+      // Sair da campanha (o proprio) ou ser removido pelo mestre.
+      allow delete: if (logado() && request.auth.uid == uid) || ehMestre(campanhaId);
+    }
+
+    match /campanhas/{campanhaId}/personagens/{personagemId} {
+      // Todo membro acompanha as fichas da mesa.
+      allow read: if ehMembro(campanhaId);
+      // Enviar a ficha e ato do dono: ele nao pode cadastrar ficha em nome
+      // de outro uid.
+      allow create: if ehMembro(campanhaId)
+        && request.resource.data.dono_uid == request.auth.uid;
+      // Escrevem o DONO e o MESTRE (decisao do dono do produto: o mestre
+      // aplica dano, concede item, marca condicao). O dono_uid nao muda
+      // numa atualizacao -- senao um membro poderia "adotar" a ficha de
+      // outro.
+      allow update: if ehMembro(campanhaId)
+        && request.resource.data.dono_uid == resource.data.dono_uid
+        && (resource.data.dono_uid == request.auth.uid || ehMestre(campanhaId));
+      allow delete: if logado()
+        && (resource.data.dono_uid == request.auth.uid || ehMestre(campanhaId));
+    }
+
+    // ---------- Convite: codigo -> id da campanha ----------
+    match /convites/{codigo} {
+      // Qualquer pessoa logada resolve um codigo; e o unico jeito de
+      // descobrir o id de uma campanha para entrar nela.
+      allow get: if logado();
+      allow list: if false;
+      // So o mestre cria ou troca o convite da campanha dele.
+      allow create: if logado() && request.resource.data.mestre_uid == request.auth.uid;
+      allow update, delete: if logado() && resource.data.mestre_uid == request.auth.uid;
+    }
+  }
+}

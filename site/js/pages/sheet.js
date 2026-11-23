@@ -16,7 +16,7 @@ import { garantirDadosDeClasses, resetarSuperficieSelecionada } from '../sheet/c
 import { getEstadoRecursosGuerreiro } from '../sheet/classes/guerreiro.js';
 import { sincronizarMagiasFixasMago } from '../sheet/classes/mago.js';
 import { _carregarEstadoColapso } from '../sheet/colapso.js';
-import { char, classeData, salvar, iniciarAberturaFicha, concluirAberturaFicha } from '../sheet/estado.js';
+import { char, classeData, salvar, iniciarAberturaFicha, concluirAberturaFicha, definirCampanhaDaFicha } from '../sheet/estado.js';
 // nivelNa (Tarefa 3, sub-projeto "tela magias por classe"): ver o
 // comentário de `limitePreparadasMago`, abaixo -- o nível NA classe Mago,
 // nunca o espelho `char.nivel` (o TOTAL).
@@ -75,11 +75,29 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
   });
 }
 
-export async function renderSheet(container, charId) {
+/**
+ * Desenha a ficha.
+ *
+ * `opcoes.personagem` abre uma ficha que NÃO está na lista local: a cópia
+ * que vive numa campanha. Nesse caso pula a reconciliação com a nuvem
+ * privada (`users/{uid}`), que é de outro espaço e não tem nada a dizer
+ * sobre esta ficha, e liga o modo campanha em estado.js -- a partir daí
+ * `salvar()` grava na mesa, não na lista deste aparelho.
+ *
+ * @param {HTMLElement} container
+ * @param {string} charId Id do personagem.
+ * @param {{personagem?: object, campanhaId?: string}} [opcoes]
+ */
+export async function renderSheet(container, charId, opcoes = {}) {
   _containerFicha = container;
   definirContainer(container);
-  await _atualizarDaNuvemAntesDeAbrir(charId);
-  definirChar(getPersonagem(charId));
+  definirCampanhaDaFicha(opcoes.campanhaId || null);
+  if (opcoes.personagem) {
+    definirChar(opcoes.personagem);
+  } else {
+    await _atualizarDaNuvemAntesDeAbrir(charId);
+    definirChar(getPersonagem(charId));
+  }
   // Seletor de superficie de conjuracao (Tarefa 4, sub-projeto "tela
   // magias por classe"): a escolha e uma variavel de MODULO
   // (contexto-classe.js), nao presa a este personagem -- sem resetar

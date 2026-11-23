@@ -4,7 +4,9 @@
 import { renderHome, sincronizarHomeAoVoltar } from './pages/home.js';
 import { renderCreator } from './pages/creator.js';
 import { renderSheet } from './pages/sheet.js';
+import { renderListaCampanhas, renderPaginaCampanha, renderFichaDeCampanha } from './pages/campanhas.js';
 import { inicializarSync } from './sync.js';
+import { inicializarCampanha } from './campanha.js';
 import { carregarTaxasMoeda } from './store.js';
 import { toast, abrirModal } from './utils.js';
 import { VERSAO_ATUAL } from './versao.js';
@@ -25,6 +27,14 @@ function resolverRota(pagina) {
     case 'home': return renderHome;
     case 'criar': return renderCreator;
     case 'ficha': return renderSheet;
+    case 'campanhas': return renderListaCampanhas;
+    case 'campanha': return renderPaginaCampanha;
+    // Ficha que vive numa MESA, nao na lista local: o param e
+    // "campanhaId/personagemId". Rota propria (e nao `#ficha` com um
+    // segundo parametro) para o destino da gravacao ficar explicito na
+    // URL -- quem le a barra de enderecos ve que esta editando a copia da
+    // campanha, nao a dele.
+    case 'fichacampanha': return renderFichaDeCampanha;
     default: return null;
   }
 }
@@ -277,6 +287,10 @@ function init() {
 
   // Inicializar módulo de sync (registra listeners online/offline e processa fila pendente)
   inicializarSync();
+  // Retoma a republicação das fichas vinculadas a uma campanha quando a
+  // conexão volta -- mesma disciplina de offline da fila de sync, em fila
+  // própria para uma falha da mesa não travar a sincronização privada.
+  inicializarCampanha();
 
   // Registrar Service Worker e verificar atualizações
   if ('serviceWorker' in navigator) {

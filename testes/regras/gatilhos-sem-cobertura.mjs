@@ -240,4 +240,28 @@ export const GATILHOS_SEM_COBERTURA = [
   'paladino-subclasse-acao=gloria_lenda_viva',
   'paladino-subclasse-acao=vinganca_anjo_vingador',
   'paladino-subclasse-acao=vinganca_voto_inimizade',
+
+  // ---- Campanha (mesa compartilhada) ----
+  // MOTIVO, assumido por escrito: todo gatilho abaixo exige conta Google
+  // logada E Firestore ao vivo, com as regras de `firestore.rules`
+  // publicadas no projeto. Um spec que clique neles nao prova nada sem
+  // isso -- ou o clique nao faz nada (sem login o bloco nem renderiza os
+  // botoes), ou faz uma escrita real no banco de producao a cada rodada
+  // de teste, o que esta suite nao deve fazer.
+  //
+  // O que cobriria de verdade e o emulador do Firebase
+  // (`firebase emulators:start --only firestore,auth`), com o app
+  // apontado para ele no modo de teste. Enquanto nao existir essa
+  // infraestrutura no repositorio, estes seis ficam descobertos de
+  // propósito, e nao por esquecimento.
+  //
+  // O que JA tem teste sem precisar de nuvem: o bloco "Campanhas" da home
+  // (render, nasce recolhido, texto sem login) e a logica pura de
+  // regras-campanha.js.
+  'btn-criar-campanha',
+  'btn-entrar-campanha',
+  'btn-confirmar-criar-campanha',
+  'btn-confirmar-entrar-campanha',
+  'btn-enviar-ficha',
+  'btn-confirmar-pv',
 ];
