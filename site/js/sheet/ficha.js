@@ -32,6 +32,7 @@ import { renderSecaoLaminaMaldita, setupEventosLaminaMaldita } from './lamina-ma
 import { renderSecaoFormaSelvagem, setupEventosFormaSelvagem } from './forma-selvagem.js';
 import { getEstadoRecursosGuardiao } from './classes/guardiao.js';
 import { getEstadoRecursosPaladino } from './classes/paladino.js';
+import { renderFabAcoes, setupEventosAcoesTurno } from './acoes-turno.js';
 import { setupEventosDetalhesColapso, setupEventosTruquesColapso } from './colapso.js';
 import { calcVantagemDesvantagemPericia, calcVantagemDesvantagemSalvaguarda, forcaPrimordialAtiva, getAtaquesPorAcao, getDeslocamentoFinal, getModIniciativa, getTruquesExtraEstiloLuta, setupEventosVantagemDesvantagem } from './combate.js';
 import { renderSecaoCondicoes, renderSecaoDefesas, renderSecaoSentidos, setupEventosCondicoes, setupEventosDefesas } from './condicoes.js';
@@ -430,6 +431,9 @@ export function renderFichaCompleta() {
       ` : ''}
     </div>
 
+    <!-- FAB Meu Turno (flutuante, acima do de descanso) -->
+    ${renderFabAcoes()}
+
     <!-- FAB Descanso (flutuante) -->
     <div id="fab-descanso" class="fab-descanso no-print">
       <button class="fab-btn" id="fab-toggle-descanso" title="Descanso">🏕️</button>
@@ -700,6 +704,7 @@ export function renderFichaCompleta() {
   // --- Eventos ---
   setupEventosHP();
   setupEventosDescanso();
+  setupEventosAcoesTurno();
   setupEventosEdicao();
   setupEventosInventarioSheet();
   setupEventosAtaques();

@@ -337,6 +337,30 @@ export async function getIndiceMagias() {
   return dados;
 }
 
+/**
+ * Carrega a tabela de Ações do Capítulo 1 do livro ("Jogando o Jogo"), que
+ * alimenta o painel de economia de ações (sheet/acoes-turno.js).
+ *
+ * A tabela é localizada pelos CABEÇALHOS, não por índice no array: hoje ela
+ * é `tabelas[9]`, mas uma reextração do PDF que acrescente qualquer tabela
+ * antes dela moveria o índice e o painel passaria a exibir, em silêncio, a
+ * tabela de perícias ou a de tamanhos.
+ *
+ * @returns {Promise<Array<{acao:string, resumo:string}>>} As 12 ações do
+ *   livro, ou [] se o arquivo não carregar (o painel degrada para as opções
+ *   derivadas da ficha, sem a referência genérica).
+ */
+export async function getAcoesDoLivro() {
+  const dados = await fetchJSON('capitulo1_regras.json');
+  const tabela = (dados?.tabelas || []).find((t) => {
+    const cab = (t?.cabecalhos || []).map((c) => String(c).trim().toLowerCase());
+    return cab.length === 2 && cab[0] === 'ação' && cab[1] === 'resumo';
+  });
+  return (tabela?.dados || [])
+    .map((linha) => ({ acao: linha['Ação'] || '', resumo: linha['Resumo'] || '' }))
+    .filter((a) => a.acao);
+}
+
 /** Carrega magias de um círculo específico (com descrição completa), com a expansão mesclada uma vez. */
 export async function getMagiasPorCirculo(circulo) {
   const nome = circulo === 0 ? 'truques' : `circulo_${circulo}`;
