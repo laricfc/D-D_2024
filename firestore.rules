@@ -99,12 +99,17 @@ service cloud.firestore {
     }
 
     match /campanhas/{campanhaId}/personagens/{personagemId} {
-      // Todo membro acompanha as fichas da mesa.
-      allow read: if ehMembro(campanhaId);
+      // A ficha completa pertence ao jogador e ao mestre da campanha.
+      allow get: if ehMembro(campanhaId)
+        && (resource == null || resource.data.dono_uid == request.auth.uid || ehMestre(campanhaId));
+      allow list: if ehMestre(campanhaId);
       // Enviar a ficha e ato do dono: ele nao pode cadastrar ficha em nome
       // de outro uid.
       allow create: if ehMembro(campanhaId)
-        && request.resource.data.dono_uid == request.auth.uid;
+        && request.resource.data.dono_uid == request.auth.uid
+        && (!exists(/databases/$(database)/documents/campanhas/$(campanhaId)/fichas_removidas/$(personagemId))
+          || (get(/databases/$(database)/documents/campanhas/$(campanhaId)/fichas_removidas/$(personagemId)).data.dono_uid == request.auth.uid
+            && !existsAfter(/databases/$(database)/documents/campanhas/$(campanhaId)/fichas_removidas/$(personagemId))));
       // Escrevem o DONO e o MESTRE (decisao do dono do produto: o mestre
       // aplica dano, concede item, marca condicao). O dono_uid nao muda
       // numa atualizacao -- senao um membro poderia "adotar" a ficha de
@@ -113,6 +118,32 @@ service cloud.firestore {
         && request.resource.data.dono_uid == resource.data.dono_uid
         && (resource.data.dono_uid == request.auth.uid || ehMestre(campanhaId));
       allow delete: if logado()
+        && (resource.data.dono_uid == request.auth.uid || ehMestre(campanhaId));
+    }
+
+    // O perfil é separado para que a lista nunca exponha a ficha completa.
+    match /campanhas/{campanhaId}/perfis/{personagemId} {
+      allow read: if ehMembro(campanhaId);
+      allow create, update: if ehMembro(campanhaId)
+        && request.resource.data.keys().hasOnly(['nome', 'classe', 'imagem', 'dono_uid'])
+        && request.resource.data.nome is string
+        && request.resource.data.classe is string
+        && request.resource.data.imagem is string
+        && request.resource.data.dono_uid is string
+        && request.resource.data.dono_uid == getAfter(/databases/$(database)/documents/campanhas/$(campanhaId)/personagens/$(personagemId)).data.dono_uid
+        && (request.resource.data.dono_uid == request.auth.uid || ehMestre(campanhaId));
+      allow delete: if ehMembro(campanhaId)
+        && (resource.data.dono_uid == request.auth.uid || ehMestre(campanhaId));
+    }
+
+    // Impede que sincronizações antigas recriem uma ficha removida.
+    match /campanhas/{campanhaId}/fichas_removidas/{personagemId} {
+      allow read: if ehMembro(campanhaId);
+      allow create, update: if ehMembro(campanhaId)
+        && request.resource.data.keys().hasOnly(['dono_uid'])
+        && request.resource.data.dono_uid == get(/databases/$(database)/documents/campanhas/$(campanhaId)/personagens/$(personagemId)).data.dono_uid
+        && (request.resource.data.dono_uid == request.auth.uid || ehMestre(campanhaId));
+      allow delete: if ehMembro(campanhaId)
         && (resource.data.dono_uid == request.auth.uid || ehMestre(campanhaId));
     }
 

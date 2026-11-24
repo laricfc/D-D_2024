@@ -32,6 +32,7 @@ let _auth = null;
 let _db = null;
 let _usuario = null;
 let _inicializado = false;
+let _inicializacao = null;
 let _onAuthChangeCallbacks = [];
 
 /**
@@ -39,7 +40,14 @@ let _onAuthChangeCallbacks = [];
  * Carrega os scripts via importmap compat (ESM CDN).
  */
 async function inicializarFirebase() {
-  if (_inicializado) return;
+  if (_inicializacao) return _inicializacao;
+  _inicializacao = carregarFirebase();
+  await _inicializacao;
+  if (!_inicializado) _inicializacao = null;
+}
+
+/** Inicializa o SDK e aguarda a primeira restauração da sessão persistida. */
+async function carregarFirebase() {
   try {
     // Importar Firebase App
     const { initializeApp } = await import('https://www.gstatic.com/firebasejs/11.4.0/firebase-app.js');
@@ -54,9 +62,15 @@ async function inicializarFirebase() {
     _inicializado = true;
 
     // Escutar mudancas de autenticacao
-    onAuthStateChanged(_auth, (user) => {
-      _usuario = user || null;
-      _onAuthChangeCallbacks.forEach(cb => cb(_usuario));
+    await new Promise((resolve, reject) => {
+      let primeiraResposta = true;
+      onAuthStateChanged(_auth, (user) => {
+        _usuario = user || null;
+        _onAuthChangeCallbacks.forEach(cb => cb(_usuario));
+        if (primeiraResposta) { primeiraResposta = false; resolve(); }
+      }, (erro) => {
+        if (primeiraResposta) { primeiraResposta = false; reject(erro); }
+      });
     });
   } catch (err) {
     console.warn('Firebase nao disponivel (offline ou bloqueado):', err.message);
@@ -104,8 +118,10 @@ export function getFirestoreModules() {
 export async function loginComGoogle() {
   await inicializarFirebase();
   if (!_auth) throw new Error('Firebase nao inicializado');
-  const { signInWithPopup, GoogleAuthProvider } =
+  const { signInWithPopup, GoogleAuthProvider, setPersistence, browserLocalPersistence } =
     await import('https://www.gstatic.com/firebasejs/11.4.0/firebase-auth.js');
+  // A sessão deve sobreviver ao recarregamento e ao fechamento da aba.
+  await setPersistence(_auth, browserLocalPersistence);
   const provider = new GoogleAuthProvider();
   const result = await signInWithPopup(_auth, provider);
   return result.user;

@@ -19,6 +19,7 @@ import { abrirModal, escHtml, fecharModalTodos, getDeslocamento, toast } from '.
 import { char, especiesCache, salvar } from './estado.js';
 import { gerarTracoSinteticoEspecie } from './caracteristicas.js';
 import { getAtaquesPorAcao, getDeslocamentoFinal } from './combate.js';
+import { getEstadoRecursosGuerreiro } from './classes/guerreiro.js';
 import { consumirEspacoDeMagia, consumirUso, contagemDeUso, espacosParaMagia } from './consumo-turno.js';
 import { contextosDeClasse } from './contexto-classe.js';
 import { renderFichaCompleta } from './ficha.js';
@@ -33,8 +34,8 @@ let _indiceMagias = null;
 
 // Campo de `char.turno` que cada faixa marca. 'livre' nao entra: movimento
 // e interacao gratis nao consomem nada do turno.
-const CAMPO_DA_FAIXA = { acao: 'acao_usada', bonus: 'bonus_usada', reacao: 'reacao_usada' };
-const NOME_DA_FAIXA = { acao: 'Ação', bonus: 'Ação Bônus', reacao: 'Reação' };
+const CAMPO_DA_FAIXA = { acao: 'acao_usada', acao_extra: 'acao_extra_usada', bonus: 'bonus_usada', reacao: 'reacao_usada' };
+const NOME_DA_FAIXA = { acao: 'Ação', acao_extra: 'Ação adicional', bonus: 'Ação Bônus', reacao: 'Reação' };
 
 /**
  * Estado do turno da ficha aberta. Campo novo de personagem: a leitura usa
@@ -74,18 +75,18 @@ function faixasGastas() {
  *   `char.usos_habilidades` -- a MESMA que o card de Caracteristicas usa.
  */
 export function caracteristicasPorFaixa() {
-  const baldes = { acao: [], bonus: [], reacao: [] };
+  const baldes = { acao: [], bonus: [], reacao: [], livre: [] };
   const vistos = new Set();
 
-  const adicionar = (nome, descricao, origem, { classe = '', fonteUso = 'classe' } = {}) => {
-    const custo = custoAcaoDeTexto(descricao);
+  const adicionar = (nome, descricao, origem, { classe = '', fonteUso = 'classe', faixa = null, manobra = false } = {}) => {
+    const custo = faixa || custoAcaoDeTexto(descricao);
     if (!custo || !baldes[custo]) return;
     // Uma caracteristica com o mesmo nome em duas classes (ex.: Ataque
     // Extra) e UMA opcao de turno, nao duas linhas iguais no painel.
     const chave = `${custo}|${nome}`;
     if (vistos.has(chave)) return;
     vistos.add(chave);
-    baldes[custo].push({ nome, origem, descricao, classe, fonteUso });
+    baldes[custo].push({ nome, origem, descricao, classe, fonteUso, manobra });
   };
 
   for (const ctx of contextosDeClasse()) {
@@ -112,10 +113,19 @@ export function caracteristicasPorFaixa() {
       .filter((c) => c.nivel <= ctx.nivelClasse)
       .filter((c) => !deOutraSubclasse.has(c.nome) || daSubclasseAtiva.has(c.nome))
       .forEach((c) => adicionar(c.nome, c.descricao, ctx.dados.nome || '',
-        { classe: ctx.classe, fonteUso: 'classe' }));
+        { classe: ctx.classe, fonteUso: 'classe', faixa: ctx.classe === 'Guerreiro' && c.nome === 'Surto de Ação' ? 'livre' : null }));
 
     if (ctx.subclasse && ctx.dados.subclasses) {
       const sc = ctx.dados.subclasses.find((s) => s.nome === ctx.subclasse);
+      if (ctx.classe === 'Guerreiro' && sc?.nome === 'Mestre da Batalha' && ctx.nivelClasse >= 3) {
+        for (const m of (sc.opcoes_manobra || [])) {
+          if (!(char.manobras_conhecidas || []).includes(m.nome)) continue;
+          const faixa = /(?:executar|usar) uma Reação/i.test(m.descricao) && !/Reação dela/i.test(m.descricao) ? 'reacao'
+            : /^Como uma Ação Bônus/i.test(m.descricao) ? 'bonus' : 'livre';
+          adicionar(m.nome, m.descricao, 'Manobra · Mestre da Batalha',
+            { classe: 'Guerreiro', fonteUso: 'subclasse', faixa, manobra: true });
+        }
+      }
       (sc?.caracteristicas || [])
         .filter((c) => c.nivel <= ctx.nivelClasse)
         .forEach((c) => adicionar(c.nome, c.descricao, ctx.subclasse,
@@ -165,11 +175,12 @@ export function renderFabAcoes() {
  * inerte (`disabled`), e o subtitulo carrega o motivo: desabilitar sem
  * dizer por que deixaria o jogador procurando o que fez a opcao sumir.
  */
-function cardOpcao(titulo, subtitulo, chaveDetalhe, { desabilitado = false } = {}) {
+function cardOpcao(titulo, subtitulo, chaveDetalhe, { desabilitado = false, superioridade = false } = {}) {
   return `
     <button class="acao-card${desabilitado ? ' acao-card-off' : ''}" data-acao-detalhe="${escHtml(chaveDetalhe)}"${desabilitado ? ' disabled' : ''}>
       <span class="acao-card-nome">${escHtml(titulo)}</span>
       ${subtitulo ? `<span class="acao-card-sub">${escHtml(subtitulo)}</span>` : ''}
+      ${superioridade ? '<span class="acao-card-recurso" title="Usa Dado de Superioridade"><span aria-hidden="true">🎲</span> Dado de Superioridade</span>' : ''}
     </button>
   `;
 }
@@ -252,7 +263,7 @@ function corpoDoPainel() {
 
   for (const c of caracs.acao) {
     const chave = `carac:${c.nome}`;
-    itensAcao.push(cardOpcao(c.nome, c.origem, chave));
+    itensAcao.push(cardOpcao(c.nome, c.origem, chave, { superioridade: c.manobra }));
     registrar(chave, { titulo: c.nome, texto: c.descricao, faixa: 'acao', carac: c });
   }
   for (const m of magias.acao) {
@@ -274,11 +285,23 @@ function corpoDoPainel() {
     registrar(chave, { titulo: a.acao, texto: a.resumo, faixa: 'acao' });
   }
 
+  // A ação do Surto é independente da ação normal e não pode ser Usar Magia.
+  const itensAcaoExtra = [];
+  if (turno.surto_usado) {
+    for (const [chave, d] of [..._detalhes]) {
+      if (d.faixa !== 'acao' || d.magia || d.titulo === 'Usar Magia' ||
+          /ação Usar Magia/i.test(d.texto || '')) continue;
+      const chaveExtra = `extra:${chave}`;
+      itensAcaoExtra.push(cardOpcao(d.titulo, d.carac?.origem || '', chaveExtra, { superioridade: d.carac?.manobra }));
+      registrar(chaveExtra, { ...d, faixa: 'acao_extra' });
+    }
+  }
+
   // --- Ação Bônus ---
   const itensBonus = [];
   for (const c of caracs.bonus) {
     const chave = `carac:${c.nome}`;
-    itensBonus.push(cardOpcao(c.nome, c.origem, chave));
+    itensBonus.push(cardOpcao(c.nome, c.origem, chave, { superioridade: c.manobra }));
     registrar(chave, { titulo: c.nome, texto: c.descricao, faixa: 'bonus', carac: c });
   }
   for (const m of magias.bonus) {
@@ -298,7 +321,7 @@ function corpoDoPainel() {
   });
   for (const c of caracs.reacao) {
     const chave = `carac:${c.nome}`;
-    itensReacao.push(cardOpcao(c.nome, c.origem, chave));
+    itensReacao.push(cardOpcao(c.nome, c.origem, chave, { superioridade: c.manobra }));
     registrar(chave, { titulo: c.nome, texto: c.descricao, faixa: 'reacao', carac: c });
   }
   for (const m of magias.reacao) {
@@ -317,6 +340,11 @@ function corpoDoPainel() {
     cardOpcao('Interagir com 1 objeto', 'Sacar arma, abrir porta, pegar item', 'livro:Objeto'),
     cardOpcao('Falar', 'Algumas frases curtas', 'livro:Falar'),
   ];
+  for (const c of caracs.livre) {
+    const chave = `carac:${c.nome}`;
+    itensLivres.push(cardOpcao(c.nome, c.origem, chave, { superioridade: c.manobra }));
+    registrar(chave, { titulo: c.nome, texto: c.descricao, faixa: 'livre', carac: c });
+  }
   registrar('livro:Mover', { titulo: 'Movimento', texto: `Você pode mover até ${desl} no seu turno, e pode quebrar esse movimento antes e depois da sua Ação.`, faixa: 'livre' });
   registrar('livro:Objeto', { titulo: 'Interação com objeto', texto: 'Uma interação gratuita com um objeto por turno: sacar ou guardar uma arma, abrir uma porta, pegar um item no chão. A segunda interação no mesmo turno custa a ação Usar Objeto.', faixa: 'livre' });
   registrar('livro:Falar', { titulo: 'Falar', texto: 'Falar algumas frases curtas é de graça no seu turno.', faixa: 'livre' });
@@ -340,6 +368,12 @@ function corpoDoPainel() {
         id: 'acao', titulo: 'Ação', icone: '⚔️', itens: itensAcao,
         gasta: turno.acao_usada, bloqueada: limites.acao, motivo: '',
       })}
+
+      ${turno.surto_usado ? secaoFaixa({
+        id: 'acao_extra', titulo: 'Ação adicional · Surto de Ação', icone: '⚔️', itens: itensAcaoExtra,
+        gasta: turno.acao_extra_usada, bloqueada: limites.acao,
+        motivo: 'Esta ação adicional não pode ser usada para Usar Magia.',
+      }) : ''}
 
       ${secaoFaixa({
         id: 'bonus', titulo: 'Ação Bônus', icone: '⚡', itens: itensBonus,
@@ -374,7 +408,7 @@ function corpoDoPainel() {
 function situacaoDaOpcao(d) {
   const turno = estadoTurno();
   const limites = limitesDoTurno(char?.condicoes, char?.exaustao);
-  const bloqueada = d.faixa !== 'livre' && !!limites[d.faixa];
+  const bloqueada = d.faixa !== 'livre' && !!limites[d.faixa === 'acao_extra' ? 'acao' : d.faixa];
   const gasta = d.faixa !== 'livre' && !!turno[CAMPO_DA_FAIXA[d.faixa]];
 
   // Magia de circulo 1+: precisa de espaco. Truque (circulo 0) nao gasta.
@@ -386,10 +420,13 @@ function situacaoDaOpcao(d) {
   // O saldo tem de cobrir o CUSTO, que nem sempre e 1 -- Explosao
   // Elemental custa 2 Pontos de Foco, Mao da Misericordia Final custa 5.
   const usos = d.carac ? contagemDeUso(d.carac) : null;
-  const semUso = !!(usos && usos.disponiveis < usos.custo);
+  const implacavel = !!(d.carac?.manobra && getEstadoRecursosGuerreiro()?.implacavelAtivo && !turno.implacavel_usado);
+  const semUso = !!(usos && usos.disponiveis < usos.custo && !implacavel);
+  const surtoUsado = d.titulo === 'Surto de Ação' && turno.surto_usado;
 
   let aviso = '';
-  if (bloqueada) aviso = `Suas condições atuais bloqueiam a ${NOME_DA_FAIXA[d.faixa]}.`;
+  if (surtoUsado) aviso = 'Surto de Ação já foi usado neste turno.';
+  else if (bloqueada) aviso = `Suas condições atuais bloqueiam a ${NOME_DA_FAIXA[d.faixa]}.`;
   else if (semEspaco) aviso = `Você não tem espaço de ${d.magia.circulo}º círculo ou maior disponível.`;
   else if (semUso) {
     aviso = usos.custo > 1
@@ -397,7 +434,7 @@ function situacaoDaOpcao(d) {
       : `Sem ${usos.rotulo} disponível para ${d.titulo}. Descanse para recuperar.`;
   }
 
-  return { bloqueada, gasta, espacos, usos, impedida: bloqueada || semEspaco || semUso, aviso };
+  return { bloqueada, gasta, espacos, usos, impedida: bloqueada || semEspaco || semUso || surtoUsado, aviso, implacavel };
 }
 
 /** Chip de uma reserva de espaco de magia; o primeiro nasce selecionado. */
@@ -414,7 +451,7 @@ function corpoDoPopup(d, sit) {
   const linhas = [];
 
   if (d.faixa === 'livre') {
-    linhas.push('<p class="acao-pop-custo acao-pop-custo-livre">Grátis: não gasta nada do seu turno.</p>');
+    linhas.push(`<p class="acao-pop-custo acao-pop-custo-livre">Grátis: não gasta Ação, Ação Bônus ou Reação.${sit.usos ? ` Custa ${sit.usos.custo} ${escHtml(sit.usos.rotulo)} (você tem ${sit.usos.disponiveis} de ${sit.usos.max}).` : ''}</p>`);
   } else {
     const custos = [`gasta sua <strong>${NOME_DA_FAIXA[d.faixa]}</strong>`];
     if (d.magia && d.magia.circulo > 0) custos.push('gasta <strong>1 espaço de magia</strong>');
@@ -429,6 +466,7 @@ function corpoDoPopup(d, sit) {
     linhas.push(`<p class="acao-pop-custo">Confirmar ${custos.join(', ')}.</p>`);
   }
 
+  if (sit.implacavel) linhas.push(`<label><input type="checkbox" id="usar-implacavel" ${sit.usos?.disponiveis < 1 ? 'checked' : ''}> Usar Implacável: 1d8 sem gastar Dado de Superioridade (uma vez por turno)</label>`);
   if (sit.aviso) linhas.push(`<p class="acao-pop-aviso">${escHtml(sit.aviso)}</p>`);
   else if (sit.gasta) linhas.push(`<p class="acao-pop-aviso acao-pop-aviso-leve">Sua ${NOME_DA_FAIXA[d.faixa]} já foi usada neste turno. Confirme só se alguma regra lhe deu outra (ex.: Surto de Ação).</p>`);
 
@@ -458,7 +496,7 @@ function abrirPopupOpcao(chave) {
 
   // Sem confirmacao quando a opcao e gratis (nao ha o que gastar) ou
   // impedida (condicao, espaco ou uso): o popup vira so a referencia.
-  const podeConfirmar = d.faixa !== 'livre' && !sit.impedida;
+  const podeConfirmar = (d.faixa !== 'livre' || !!sit.usos) && !sit.impedida;
   const rotulo = sit.gasta ? 'Usar mesmo assim' : 'Usar';
   const acoes = `
     ${podeConfirmar ? `<button class="btn btn-accent" data-acao-confirmar="sim">${rotulo}</button>` : ''}
@@ -494,7 +532,10 @@ function ligarEventosDoPopup() {
  */
 function confirmarOpcaoAberta() {
   const d = _opcaoAberta;
-  if (!d || d.faixa === 'livre') return;
+  if (!d) return;
+  const usarImplacavel = !!document.querySelector('#usar-implacavel:checked');
+  const sit = situacaoDaOpcao(d);
+  if (sit.impedida || (usarImplacavel && !sit.implacavel)) return;
   const mensagens = [];
 
   if (d.magia && d.magia.circulo > 0) {
@@ -504,16 +545,20 @@ function confirmarOpcaoAberta() {
       return;
     }
     mensagens.push(`${d.titulo} conjurada (espaço de ${d.espaco.circulo}º círculo).`);
-  } else if (d.carac) {
+  } else if (d.carac && !usarImplacavel) {
     const r = consumirUso(d.carac);
     if (!r.ok) { toast(r.mensagem, 'error'); return; }
     if (r.mensagem) mensagens.push(r.mensagem);
   }
 
-  salvarTurno({ [CAMPO_DA_FAIXA[d.faixa]]: true });
+  const alteracoes = {};
+  if (CAMPO_DA_FAIXA[d.faixa]) alteracoes[CAMPO_DA_FAIXA[d.faixa]] = true;
+  if (d.titulo === 'Surto de Ação') alteracoes.surto_usado = true;
+  if (usarImplacavel) alteracoes.implacavel_usado = true;
+  salvarTurno(alteracoes);
   _opcaoAberta = null;
   fecharModalTodos();
-  toast(mensagens[0] || `${d.titulo}: ${NOME_DA_FAIXA[d.faixa]} marcada como usada.`, 'success');
+  toast(mensagens[0] || (usarImplacavel ? `${d.titulo}: role 1d8 de Implacável.` : `${d.titulo} usado.`), 'success');
   renderFichaCompleta();
   abrirPainel();
 }
@@ -541,7 +586,8 @@ function ligarEventosDoPainel() {
     // esquece de ter gastado fora do proprio turno. Nao mexe em espaco de
     // magia nem em uso de caracteristica: esses voltam em descanso, nao
     // em turno novo.
-    salvarTurno(turnoZerado());
+    char.turno = turnoZerado();
+    salvar();
     window.fecharModal();
     renderFichaCompleta();
     abrirPainel();

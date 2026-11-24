@@ -120,6 +120,62 @@ export async function criarCampanha(nome) {
   }
 }
 
+/** Exclui a campanha e seus documentos compartilhados em uma única gravação. */
+export async function excluirCampanha(campanhaId) {
+  const ctx = contexto();
+  if (!ctx) return SEM_LOGIN;
+  let etapa = 'consultar a campanha';
+  try {
+    const { doc, collection, getDoc, getDocs, setDoc, writeBatch } = await getFirestoreModules();
+    const ref = doc(ctx.db, 'campanhas', campanhaId);
+    const campanha = await getDoc(ref);
+    if (!campanha.exists()) return { ok: false, erro: 'Campanha não encontrada.' };
+    if (campanha.data().mestre_uid !== ctx.usuario.uid) {
+      return { ok: false, erro: 'Somente o mestre pode excluir a campanha.' };
+    }
+    etapa = 'consultar os membros e as fichas';
+    const lerConteudo = () => Promise.all([
+      getDocs(collection(ctx.db, 'campanhas', campanhaId, 'membros')),
+      getDocs(collection(ctx.db, 'campanhas', campanhaId, 'personagens')),
+      getDocs(collection(ctx.db, 'campanhas', campanhaId, 'perfis')),
+      getDocs(collection(ctx.db, 'campanhas', campanhaId, 'fichas_removidas')),
+    ]);
+    let conteudo;
+    try {
+      conteudo = await lerConteudo();
+    } catch (err) {
+      if (!String(err?.code || '').includes('permission-denied')) throw err;
+      // Campanhas antigas podem ter sido criadas antes da inscrição do
+      // mestre. As regras autorizam o próprio mestre a recriar seu vínculo.
+      etapa = 'restaurar a inscrição da dona';
+      await setDoc(doc(ctx.db, 'campanhas', campanhaId, 'membros', ctx.usuario.uid), {
+        uid: ctx.usuario.uid, nome: ctx.usuario.displayName || '', papel: 'mestre',
+      }, { merge: true });
+      etapa = 'consultar os membros e as fichas';
+      conteudo = await lerConteudo();
+    }
+    const [membros, personagens, perfis, removidas] = conteudo;
+    const codigo = campanha.data().codigo;
+    const documentos = [...membros.docs, ...personagens.docs, ...perfis.docs, ...removidas.docs];
+    if (documentos.length + 1 + (codigo ? 1 : 0) > 500) {
+      return { ok: false, erro: 'Esta campanha tem dados demais para excluir de uma vez. A exclusão não foi realizada.' };
+    }
+    const lote = writeBatch(ctx.db);
+    documentos.forEach((d) => lote.delete(d.ref));
+    if (codigo) lote.delete(doc(ctx.db, 'convites', codigo));
+    lote.delete(ref);
+    etapa = 'excluir os dados da campanha';
+    await lote.commit();
+    esquecerCampanha(campanhaId);
+    return { ok: true };
+  } catch (err) {
+    if (String(err?.code || '').includes('permission-denied')) {
+      return { ok: false, erro: `O Firestore recusou ${etapa}. Confirme que as regras de campanhas estão publicadas no projeto Firebase.` };
+    }
+    return { ok: false, erro: mensagemDeErro(err) };
+  }
+}
+
 /**
  * Sorteia um codigo livre e grava o convite apontando para a campanha.
  * Tenta algumas vezes antes de desistir: com 31^6 combinacoes a colisao e
@@ -294,7 +350,7 @@ export async function carregarCampanha(campanhaId) {
  * @param {object} personagem Ficha completa.
  * @returns {Promise<{ok:boolean, gravado?:boolean, erro?:string}>}
  */
-export async function enviarPersonagem(campanhaId, personagem) {
+export async function enviarPersonagem(campanhaId, personagem, { envioExplicito = false } = {}) {
   const ctx = contexto();
   if (!ctx) return SEM_LOGIN;
   if (!personagem?.id) return { ok: false, erro: 'Personagem sem id.' };
@@ -313,6 +369,9 @@ export async function enviarPersonagem(campanhaId, personagem) {
   try {
     return await runTransaction(db, async (tx) => {
       const snap = await tx.get(ref);
+      const removidaRef = doc(db, 'campanhas', campanhaId, 'fichas_removidas', personagem.id);
+      const removida = await tx.get(removidaRef);
+      if (removida.exists() && !envioExplicito) return { ok: true, gravado: false };
       const remoto = snap.exists() ? snap.data() : null;
       // `dono_uid` e carimbado na PRIMEIRA gravacao e nunca muda depois:
       // firestore.rules recusa o update que o altera, e reescreve-lo aqui
@@ -320,6 +379,8 @@ export async function enviarPersonagem(campanhaId, personagem) {
       const dono = remoto?.dono_uid || usuario.uid;
       if (remoto && !podeSobrescreverNuvem(dados, remoto)) return { ok: true, gravado: false };
       tx.set(ref, { ...dados, dono_uid: dono });
+      tx.set(doc(db, 'campanhas', campanhaId, 'perfis', personagem.id), perfilPublico(dados, dono));
+      if (removida.exists()) tx.delete(removidaRef);
       return { ok: true, gravado: true };
     });
   } catch (err) {
@@ -327,13 +388,46 @@ export async function enviarPersonagem(campanhaId, personagem) {
   }
 }
 
+/** Somente os campos que a mesa pode exibir aos demais jogadores. */
+function perfilPublico(p, dono) {
+  const classes = Array.isArray(p.classes) && p.classes.length
+    ? p.classes.map((c) => `${c.classe || ''} ${Number(c.nivel) || 0}`.trim()).join(' / ')
+    : [p.classe || '', p.nivel || ''].filter(Boolean).join(' ');
+  return { nome: String(p.nome || 'Sem nome'), classe: classes || '—', imagem: String(p.imagem || ''), dono_uid: dono };
+}
+
+/** Preenche os perfis das fichas anteriores à criação do catálogo público. */
+export async function atualizarPerfisDaCampanha(campanhaId, personagens) {
+  const ctx = contexto();
+  if (!ctx || !personagens.length) return;
+  try {
+    const { collection, getDocs, doc, writeBatch } = await getFirestoreModules();
+    const existentes = await getDocs(collection(ctx.db, 'campanhas', campanhaId, 'perfis'));
+    const ids = new Set(existentes.docs.map((d) => d.id));
+    const faltantes = personagens.filter((p) => p.id && p.dono_uid && !ids.has(p.id));
+    for (let i = 0; i < faltantes.length; i += 400) {
+      const lote = writeBatch(ctx.db);
+      for (const p of faltantes.slice(i, i + 400)) lote.set(doc(ctx.db, 'campanhas', campanhaId, 'perfis', p.id), perfilPublico(p, p.dono_uid));
+      await lote.commit();
+    }
+  } catch (err) { console.warn('Não foi possível atualizar os perfis da campanha:', err); }
+}
+
 /** Tira a ficha da campanha (a copia privada do jogador nao e tocada). */
 export async function removerPersonagemDaCampanha(campanhaId, personagemId) {
   const ctx = contexto();
   if (!ctx) return SEM_LOGIN;
-  const { doc, deleteDoc } = await getFirestoreModules();
+  const { doc, runTransaction } = await getFirestoreModules();
   try {
-    await deleteDoc(doc(ctx.db, 'campanhas', campanhaId, 'personagens', personagemId));
+    await runTransaction(ctx.db, async (tx) => {
+      const ficha = doc(ctx.db, 'campanhas', campanhaId, 'personagens', personagemId);
+      const perfil = doc(ctx.db, 'campanhas', campanhaId, 'perfis', personagemId);
+      const [original, resumo] = await Promise.all([tx.get(ficha), tx.get(perfil)]);
+      if (!original.exists()) throw new Error('Ficha não encontrada na campanha.');
+      tx.set(doc(ctx.db, 'campanhas', campanhaId, 'fichas_removidas', personagemId), { dono_uid: original.data().dono_uid });
+      if (resumo.exists()) tx.delete(perfil);
+      tx.delete(ficha);
+    });
     return { ok: true };
   } catch (err) {
     return { ok: false, erro: mensagemDeErro(err) };
@@ -354,7 +448,7 @@ export async function removerPersonagemDaCampanha(campanhaId, personagemId) {
  * @returns {() => void} Encerra a escuta. SEMPRE chame ao sair da tela:
  *   escuta viva depois do render seguinte vaza memoria e custa leitura.
  */
-export function acompanharPersonagens(campanhaId, aoMudar, aoFalhar = () => {}) {
+export function acompanharPersonagens(campanhaId, aoMudar, aoFalhar = () => {}, somentePerfis = false) {
   let cancelar = () => {};
   let cancelado = false;
 
@@ -364,7 +458,7 @@ export function acompanharPersonagens(campanhaId, aoMudar, aoFalhar = () => {}) 
     try {
       const { collection, onSnapshot } = await getFirestoreModules();
       if (cancelado) return; // a tela saiu enquanto o SDK carregava
-      const ref = collection(ctx.db, 'campanhas', campanhaId, 'personagens');
+      const ref = collection(ctx.db, 'campanhas', campanhaId, somentePerfis ? 'perfis' : 'personagens');
       cancelar = onSnapshot(ref,
         (snap) => aoMudar(snap.docs.map((d) => ({ ...d.data(), id: d.id }))),
         (err) => aoFalhar(mensagemDeErro(err)));

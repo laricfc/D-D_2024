@@ -1,4 +1,5 @@
 // ============================================================
+
 // Regras de campanha: codigo de convite, papeis e quem pode editar o que.
 //
 // Modulo PURO: sem DOM, sem `char`, sem Firestore. Recebe os dados ja

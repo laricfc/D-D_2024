@@ -266,7 +266,12 @@ const RECURSOS_DEDICADOS = [
  * @returns {{contagem:{max:number,disponiveis:number}, custo:number,
  *   rotulo:string, consumir:Function, mensagem:Function|undefined}|null}
  */
-function dedicadoDe(nome, classe) {
+function dedicadoDe(nome, classe, manobra = false) {
+  if (manobra && classe === 'Guerreiro') {
+    const pool = POOLS.superioridadeGuerreiro;
+    const c = pool.contagem();
+    return c ? { contagem: c, custo: 1, rotulo: pool.singular, consumir: () => pool.gastar(1) } : null;
+  }
   if (!nome || !classe) return null;
   const def = RECURSOS_DEDICADOS.find((r) => r.nome === nome && r.classe === classe);
   if (!def) return null;
@@ -304,7 +309,7 @@ function dedicadoDe(nome, classe) {
  *   nenhum -- caso em que usa-la nao gasta nada alem da faixa do turno.
  */
 export function contagemDeUso(carac) {
-  const def = dedicadoDe(carac?.nome, carac?.classe);
+  const def = dedicadoDe(carac?.nome, carac?.classe, carac?.manobra);
   if (def) {
     return {
       max: def.contagem.max, disponiveis: def.contagem.disponiveis,
@@ -355,7 +360,7 @@ function contadorGenerico(carac) {
  *   Ataque Extra), entao confirmar marca so a faixa do turno.
  */
 export function consumirUso(carac) {
-  const def = dedicadoDe(carac?.nome, carac?.classe);
+  const def = dedicadoDe(carac?.nome, carac?.classe, carac?.manobra);
   if (def) {
     if (def.contagem.disponiveis < def.custo) {
       return { ok: false, esgotado: true, semContador: false, mensagem: `Sem ${def.rotulo} suficiente para ${carac.nome}.` };

@@ -128,3 +128,45 @@ test('painel Meu Turno: condição Incapacitado bloqueia as três faixas', async
 
   expect(erros, `erros de console/página: ${erros.join('; ')}`).toEqual([]);
 });
+
+test('Surto de Ação consome uso e cria ação adicional independente até o próximo turno', async ({ context }) => {
+  const { page, erros } = await abrirFicha(context, {
+    classe: 'Guerreiro', nivel: 3, xp: 900, atributos: ATRIBUTOS_REGRAS,
+    subclasse: 'Mestre da Batalha', manobras_conhecidas: ['Finta', 'Aparar', 'Desarme'],
+  }, 'regras-acoes-turno-surto');
+  await assentar(page).catch(() => {});
+  await page.click('#fab-toggle-acoes');
+  const faixas = page.locator('.acao-faixa');
+  await expect(faixas.filter({ has: page.locator('[data-acao-detalhe="carac:Finta"]') })).toContainText('Ação Bônus');
+  await expect(faixas.filter({ has: page.locator('[data-acao-detalhe="carac:Aparar"]') })).toContainText('Reação');
+  for (const nome of ['Finta', 'Aparar', 'Desarme']) {
+    await expect(page.locator(`[data-acao-detalhe="carac:${nome}"] .acao-card-recurso`)).toContainText('Dado de Superioridade');
+  }
+  await expect(page.locator('[data-acao-detalhe="livro:Atacar"] .acao-card-recurso')).toHaveCount(0);
+  const manobras = faixas.filter({ has: page.locator('[data-acao-detalhe="carac:Desarme"]') });
+  await expect(manobras).toContainText('Movimento e grátis');
+  await manobras.locator('[data-acao-detalhe="carac:Desarme"]').click();
+  await expect(page.locator('.sub-modal-overlay').last()).toContainText('atingir uma criatura');
+  await page.locator('.sub-modal-overlay').last().locator('[data-acao-confirmar]').click();
+  let salvo = await personagemSalvo(page);
+  expect(salvo.recursos.guerreiro.subclasses.mestre_batalha.dados_superioridade_gastos).toBe(1);
+  expect(salvo.turno.acao_usada).toBe(false);
+  await page.locator('[data-acao-detalhe="carac:Surto de Ação"]').click();
+  await page.locator('.sub-modal-overlay').last().locator('[data-acao-confirmar]').click();
+  salvo = await personagemSalvo(page);
+  expect(salvo.recursos.guerreiro.surto_acao_usos_gastos).toBe(1);
+  expect(salvo.turno.surto_usado).toBe(true);
+  const extra = page.locator('.acao-faixa', { hasText: 'Ação adicional · Surto de Ação' });
+  await expect(extra).toBeVisible();
+  await expect(extra.locator('.acao-card', { hasText: 'Usar Magia' })).toHaveCount(0);
+  await extra.locator('.acao-card', { hasText: 'Atacar' }).click();
+  await page.locator('.sub-modal-overlay').last().locator('[data-acao-confirmar]').click();
+  salvo = await personagemSalvo(page);
+  expect(salvo.turno.acao_extra_usada).toBe(true);
+  expect(salvo.turno.acao_usada).toBe(false);
+  await page.click('#btn-passar-turno');
+  await expect(page.locator('.acao-faixa', { hasText: 'Ação adicional · Surto de Ação' })).toHaveCount(0);
+  salvo = await personagemSalvo(page);
+  expect(salvo.recursos.guerreiro.surto_acao_usos_gastos).toBe(1);
+  expect(erros).toEqual([]);
+});

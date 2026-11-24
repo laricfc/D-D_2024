@@ -26,7 +26,9 @@ function resolverRota(pagina) {
   switch (pagina) {
     case 'home': return renderHome;
     case 'criar': return renderCreator;
-    case 'ficha': return renderSheet;
+    case 'ficha': return (container, param) => param.startsWith('campanha/')
+      ? renderFichaDeCampanha(container, param.slice('campanha/'.length))
+      : renderSheet(container, param);
     case 'campanhas': return renderListaCampanhas;
     case 'campanha': return renderPaginaCampanha;
     // Ficha que vive numa MESA, nao na lista local: o param e

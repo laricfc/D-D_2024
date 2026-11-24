@@ -1502,6 +1502,7 @@ tr:hover td { background: #faf8f4; }
 .acao-card-off .acao-card-sub { font-style: italic; }
 .acao-card-nome { font-size: 0.8rem; font-weight: 600; line-height: 1.25; }
 .acao-card-sub { font-size: 0.66rem; color: var(--text-muted); line-height: 1.2; }
+.acao-card-recurso { margin-top: 4px; font-size: 0.65rem; color: var(--text-muted); line-height: 1.2; }
 
 /* Celular (390px): uma coluna, para o nome da magia não quebrar no meio. */
 @media (max-width: 420px) {
@@ -2580,6 +2581,10 @@ tr:hover td { background: #faf8f4; }
 }
 .campanha-sumario::-webkit-details-marker { display: none; }
 .campanha-sumario-resumo { font-size: 0.72rem; font-weight: 500; color: var(--text-muted); }
+.campanha-resumo-magia { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; font-size: 0.78rem; }
+.campanha-reserva { display: flex; justify-content: space-between; gap: 10px; }
+.campanha-perfil { display: flex; align-items: center; gap: 10px; }
+.campanha-perfil h3 { margin: 0 0 4px; font-size: 0.95rem; }
 .campanha-conteudo { padding: 0 14px 14px; }
 .campanha-acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .campanha-aviso {
@@ -2731,6 +2736,9 @@ tr:hover td { background: #faf8f4; }
   color: #fff;
 }
 .campanha-cartao-acoes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 6px; }
+.campanha-cartao-catalogo .campanha-cartao-acoes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.campanha-cartao-catalogo .campanha-cartao-acoes .btn { white-space: normal; text-align: center; }
+.campanha-cartao-catalogo .campanha-excluir { grid-column: 1 / -1; justify-self: start; }
 
 @media (max-width: 420px) {
   .campanha-grade { grid-template-columns: 1fr; }

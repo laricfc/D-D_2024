@@ -11,20 +11,40 @@
 // ============================================================
 import {
   acompanharPersonagens, buscarPersonagemDaCampanha, carregarCampanha, criarCampanha,
-  entrarNaCampanha, entrarPorId, enviarPersonagem, esquecerCampanha,
+  atualizarPerfisDaCampanha,
+  removerPersonagemDaCampanha,
+  entrarPorId, enviarPersonagem, esquecerCampanha, excluirCampanha,
   listarTodasCampanhas, minhasCampanhas,
 } from '../campanha.js';
 import { ordenarParaMestre, resumoDoPersonagem } from '../regras-campanha.js';
-import { getUsuario } from '../auth.js';
+import { getUsuario, iniciarAuth, onAuthChange } from '../auth.js';
 import { listarPersonagens, salvarPersonagem } from '../store.js';
 import { renderSheet } from './sheet.js';
-import { abrirModal, escHtml, toast } from '../utils.js';
+import { getClasse } from '../db.js';
+import { classesDe } from '../regras-multiclasse.js';
+import { migrarEspacosDeMagia } from '../regras-multiclasse-conjuracao.js';
+import { montarReservasDeEspacos } from '../sheet/reservas-espacos.js';
+import { resolverPassivosTalentos } from '../talentos-effects.js';
+import { abrirModal, calcCA, escHtml, toast } from '../utils.js';
+
+/** Usa o cálculo da ficha, pois a CA não é salva como campo do personagem. */
+export function resumirFicha(p) {
+  return { ...resumoDoPersonagem(p), ca: calcCA(p, resolverPassivosTalentos(p)) };
+}
 
 // A escuta ao vivo da mesa aberta agora. Guardada em modulo porque o
 // popup pode ser fechado de varias formas (X, clique fora, Esc) e a
 // escuta precisa morrer em todas elas -- escuta viva depois de fechar
 // vaza memoria e continua custando leitura do Firestore.
 let _pararDeAcompanhar = null;
+let _aguardandoSessaoNaRota = '';
+
+/** Reabre a rota de campanha se o Firebase restaurar a conta mais tarde. */
+onAuthChange((usuario) => {
+  if (!usuario || !_aguardandoSessaoNaRota || window.location.hash !== _aguardandoSessaoNaRota) return;
+  _aguardandoSessaoNaRota = '';
+  window.dispatchEvent(new HashChangeEvent('hashchange'));
+});
 
 /** Encerra a escuta da mesa, se houver. Idempotente. */
 function pararEscuta() {
@@ -39,31 +59,21 @@ function pararEscuta() {
  */
 export function renderSecaoCampanhas() {
   const usuario = getUsuario();
-  const campanhas = minhasCampanhas();
-  const resumo = usuario
-    ? `${campanhas.length} campanha${campanhas.length === 1 ? '' : 's'}`
-    : 'precisa de conta';
-
   const corpo = !usuario
     ? `<p class="campanha-aviso">Campanha é a mesa compartilhada: os jogadores enviam a ficha e o mestre acompanha as alterações ao vivo. Para usar, entre com o Google acima — os personagens precisam de um lugar na nuvem para serem compartilhados.</p>`
     : `
       <div class="campanha-acoes">
-        <button class="btn btn-sm btn-primary" onclick="navegar('campanhas')">Ver todas as campanhas</button>
-        <button class="btn btn-sm btn-secondary" id="btn-criar-campanha">+ Criar</button>
-        <button class="btn btn-sm btn-secondary" id="btn-entrar-campanha">Entrar com código</button>
+        <button class="btn btn-sm btn-primary" id="btn-criar-campanha">+ Criar campanha</button>
       </div>
-      ${campanhas.length === 0
-        ? '<p class="campanha-aviso">Você ainda não participa de nenhuma campanha. Crie uma para mestrar, ou entre na de outra pessoa com o código que ela te passar.</p>'
-        : `<div class="campanha-cards">${campanhas.map(cardCampanha).join('')}</div>`}`;
+      <div id="campanhas-catalogo"><p class="campanha-aviso">Carregando campanhas…</p></div>`;
 
   return `
-    <details class="card campanha-bloco" data-details-id="campanhas-home">
-      <summary class="campanha-sumario">
+    <section class="card campanha-bloco">
+      <div class="campanha-sumario">
         <span>🎲 Campanhas</span>
-        <span class="campanha-sumario-resumo">${escHtml(resumo)}</span>
-      </summary>
+      </div>
       <div class="campanha-conteudo">${corpo}</div>
-    </details>`;
+    </section>`;
 }
 
 /** Card de uma campanha do espelho local. */
@@ -78,10 +88,22 @@ function cardCampanha(c) {
 /** Liga os cliques do bloco. Chamada pelo setup da home a cada render. */
 export function setupEventosCampanhas(container) {
   container.querySelector('#btn-criar-campanha')?.addEventListener('click', perguntarNomeDaCampanha);
-  container.querySelector('#btn-entrar-campanha')?.addEventListener('click', perguntarCodigo);
-  container.querySelectorAll('[data-abrir-campanha]').forEach((el) => {
-    el.addEventListener('click', () => abrirMesa(el.dataset.abrirCampanha));
-  });
+  carregarCatalogoHome(container);
+}
+
+/** Carrega o catálogo na home sem sobrescrever uma tela já substituída. */
+async function carregarCatalogoHome(container) {
+  const alvo = container.querySelector('#campanhas-catalogo');
+  const usuario = getUsuario();
+  if (!alvo || !usuario) return;
+  const r = await listarTodasCampanhas();
+  if (!alvo.isConnected || getUsuario()?.uid !== usuario.uid) return;
+  if (!r.ok) { alvo.innerHTML = `<p class="campanha-erro">${escHtml(r.erro)}</p>`; return; }
+  const minhas = new Set(minhasCampanhas().map((c) => c.id));
+  alvo.innerHTML = r.campanhas.length
+    ? `<div class="campanha-grade">${r.campanhas.map((c) => cartaoDeCampanha(c, usuario.uid, minhas.has(c.id))).join('')}</div>`
+    : '<p class="campanha-aviso">Nenhuma campanha ainda. Crie a primeira.</p>';
+  ligarBotoesDoCartao(alvo);
 }
 
 /** Popup de criar campanha. */
@@ -89,7 +111,7 @@ function perguntarNomeDaCampanha() {
   abrirModal('Nova campanha', `
     <label class="campanha-rotulo" for="campo-nome-campanha">Nome da campanha</label>
     <input id="campo-nome-campanha" class="input" maxlength="60" placeholder="A Maldição de Strahd">
-    <p class="campanha-aviso">Você será o mestre. Depois de criar, um código de convite aparece para você passar aos jogadores.</p>
+    <p class="campanha-aviso">Você será o mestre. A campanha aparecerá na lista para os jogadores entrarem.</p>
   `, '<button class="btn btn-accent" id="btn-confirmar-criar-campanha">Criar</button><button class="btn btn-secondary" onclick="fecharModal()">Cancelar</button>');
 
   document.getElementById('btn-confirmar-criar-campanha')?.addEventListener('click', async () => {
@@ -97,37 +119,20 @@ function perguntarNomeDaCampanha() {
     const r = await criarCampanha(nome);
     if (!r.ok) { toast(r.erro, 'error'); return; }
     window.fecharModalTodos();
-    mostrarCodigo(r.codigo);
+    mostrarCampanhaCriada();
   });
 }
 
 /** Mostra o codigo recem-criado, para o mestre copiar e passar. */
-function mostrarCodigo(codigo) {
+function mostrarCampanhaCriada() {
   abrirModal('Campanha criada', `
-    <p>Passe este código para os jogadores entrarem:</p>
-    <div class="campanha-codigo">${escHtml(codigo)}</div>
-    <p class="campanha-aviso">Quem tiver o código entra na mesa. Cada jogador envia a própria ficha; você não puxa ficha de ninguém.</p>
+    <p>Sua campanha está na lista. Os jogadores podem encontrá-la e entrar por lá.</p>
+    <p class="campanha-aviso">Cada jogador envia o próprio personagem para a mesa.</p>
   `, '<button class="btn btn-secondary" onclick="fecharModal()">Fechar</button>');
   // A home precisa mostrar a campanha nova na lista.
   window.navegar?.('home');
-}
-
-/** Popup de entrar por codigo. */
-function perguntarCodigo() {
-  abrirModal('Entrar numa campanha', `
-    <label class="campanha-rotulo" for="campo-codigo-campanha">Código de convite</label>
-    <input id="campo-codigo-campanha" class="input campanha-codigo-campo" maxlength="9" placeholder="ABC234" autocapitalize="characters">
-    <p class="campanha-aviso">São 6 letras e números. Maiúsculas, minúsculas e hífen dão no mesmo.</p>
-  `, '<button class="btn btn-accent" id="btn-confirmar-entrar-campanha">Entrar</button><button class="btn btn-secondary" onclick="fecharModal()">Cancelar</button>');
-
-  document.getElementById('btn-confirmar-entrar-campanha')?.addEventListener('click', async () => {
-    const codigo = document.getElementById('campo-codigo-campanha')?.value || '';
-    const r = await entrarNaCampanha(codigo);
-    if (!r.ok) { toast(r.erro, 'error'); return; }
-    window.fecharModalTodos();
-    toast(`Você entrou em ${r.nome}.`, 'success');
-    window.navegar?.('home');
-  });
+  const home = document.getElementById('app-content');
+  if (home?.querySelector('#campanhas-catalogo')) carregarCatalogoHome(home);
 }
 
 /**
@@ -181,7 +186,7 @@ function listaDaMesa(personagens, papel, campanhaId) {
   if (!personagens.length) {
     return '<p class="campanha-aviso">Nenhuma ficha enviada ainda. Use "Enviar meu personagem" abaixo.</p>';
   }
-  const resumos = ordenarParaMestre(personagens.map(resumoDoPersonagem));
+  const resumos = ordenarParaMestre(personagens.map(resumirFicha));
   return `<div class="campanha-fichas">${resumos.map((r) => linhaDaFicha(r, papel)).join('')}</div>`;
 }
 
@@ -274,7 +279,7 @@ function escolherFichaParaEnviar(campanhaId) {
       // publicar as proximas edicoes nesta mesa.
       const comVinculo = { ...p, campanha_id: campanhaId, atualizado_em: new Date().toISOString() };
       salvarPersonagem(comVinculo);
-      const r = await enviarPersonagem(campanhaId, comVinculo);
+      const r = await enviarPersonagem(campanhaId, comVinculo, { envioExplicito: true });
       window.fecharModal();
       toast(r.ok ? `${p.nome || 'Personagem'} entrou na mesa.` : r.erro, r.ok ? 'success' : 'error');
     });
@@ -296,6 +301,10 @@ export function sairDaCampanhaLocal(id) {
  * comentario em firestore.rules, que registra o efeito disso nas fichas.
  */
 export async function renderListaCampanhas(container) {
+  const rota = window.location.hash;
+  container.innerHTML = '<p class="campanha-aviso">Verificando sua conta…</p>';
+  await iniciarAuth();
+  if (window.location.hash !== rota) return;
   if (!getUsuario()) {
     container.innerHTML = `
       <div class="empty-state">
@@ -329,9 +338,10 @@ export async function renderListaCampanhas(container) {
 /** Cartao de campanha do catalogo, com as acoes embaixo. */
 function cartaoDeCampanha(c, uid, souMembro) {
   const souMestre = c.mestre_uid === uid;
+  souMembro = souMembro || souMestre;
   const papel = souMestre ? 'Mestre' : souMembro ? 'Jogador' : '';
   return `
-    <div class="campanha-cartao">
+    <div class="campanha-cartao campanha-cartao-catalogo">
       <div class="campanha-cartao-cabeca">
         <h3>${escHtml(c.nome || 'Campanha')}</h3>
         ${papel ? `<span class="campanha-etiqueta">${papel}</span>` : ''}
@@ -339,27 +349,32 @@ function cartaoDeCampanha(c, uid, souMembro) {
       <p class="campanha-cartao-sub">Mestre: ${escHtml(c.mestre_nome || '—')}</p>
       <div class="campanha-cartao-acoes">
         ${souMembro
-          ? `<button class="btn btn-sm btn-primary" data-abrir-mesa="${escHtml(c.id)}">Acessar</button>
-             <button class="btn btn-sm btn-secondary" data-add-ficha="${escHtml(c.id)}">Adicionar minha ficha</button>
+          ? `${souMestre ? `<button class="btn btn-sm btn-primary" data-abrir-mesa="${escHtml(c.id)}" data-visao="mestre">Visão do mestre</button>` : ''}
+             <button class="btn btn-sm ${souMestre ? 'btn-secondary' : 'btn-primary'}" data-abrir-mesa="${escHtml(c.id)}" data-visao="jogador">Visão do jogador</button>
+             <button class="btn btn-sm btn-secondary" data-add-ficha="${escHtml(c.id)}">Enviar meu personagem</button>
              <button class="btn btn-sm btn-secondary" data-criar-ficha="${escHtml(c.id)}">Criar uma ficha</button>`
           : `<button class="btn btn-sm btn-accent" data-entrar-campanha-id="${escHtml(c.id)}" data-nome-campanha="${escHtml(c.nome || 'Campanha')}">Entrar</button>`}
+        ${souMestre ? `<button class="btn btn-sm btn-danger campanha-excluir" data-excluir-campanha="${escHtml(c.id)}" data-nome-campanha="${escHtml(c.nome || 'Campanha')}">Excluir campanha</button>` : ''}
       </div>
     </div>`;
 }
 
 /** Liga as acoes dos cartoes do catalogo. */
 function ligarBotoesDoCartao(container) {
+  container.querySelectorAll('[data-excluir-campanha]').forEach((el) => {
+    el.addEventListener('click', () => confirmarExclusaoCampanha(el.dataset.excluirCampanha, el.dataset.nomeCampanha));
+  });
   container.querySelectorAll('[data-entrar-campanha-id]').forEach((el) => {
     el.addEventListener('click', async () => {
       const r = await entrarPorId(el.dataset.entrarCampanhaId, el.dataset.nomeCampanha);
       if (!r.ok) { toast(r.erro, 'error'); return; }
       toast(`Você entrou em ${el.dataset.nomeCampanha}.`, 'success');
-      window.navegar('campanhas');
-      renderListaCampanhas(container);
+      if (container.closest('#campanhas-catalogo')) carregarCatalogoHome(document.getElementById('app-content'));
+      else renderListaCampanhas(container);
     });
   });
   container.querySelectorAll('[data-abrir-mesa]').forEach((el) => {
-    el.addEventListener('click', () => window.navegar(`campanha/${el.dataset.abrirMesa}`));
+    el.addEventListener('click', () => window.navegar(`campanha/${encodeURIComponent(el.dataset.abrirMesa)}/${el.dataset.visao}`));
   });
   container.querySelectorAll('[data-add-ficha]').forEach((el) => {
     el.addEventListener('click', () => escolherFichaParaEnviar(el.dataset.addFicha));
@@ -374,58 +389,170 @@ function ligarBotoesDoCartao(container) {
   });
 }
 
+/** Confirma a exclusão da mesa antes de remover os dados compartilhados. */
+function confirmarExclusaoCampanha(id, nome) {
+  abrirModal('Excluir campanha', `
+    <p>Excluir <strong>${escHtml(nome || 'Campanha')}</strong>?</p>
+    <p>Os membros, o convite e as fichas compartilhadas da campanha serão removidos. Os personagens privados dos jogadores serão mantidos.</p>
+    <p>Esta ação não pode ser desfeita.</p>`,
+    '<button class="btn btn-danger" id="btn-confirmar-excluir-campanha">Excluir campanha</button><button class="btn btn-secondary" onclick="fecharModal()">Cancelar</button>');
+  document.getElementById('btn-confirmar-excluir-campanha')?.addEventListener('click', async (evento) => {
+    const botao = evento.currentTarget;
+    botao.disabled = true;
+    const resultado = await excluirCampanha(id);
+    if (!resultado.ok) { botao.disabled = false; toast(resultado.erro, 'error'); return; }
+    pararEscuta();
+    window.fecharModalTodos();
+    toast('Campanha excluída.', 'success');
+    if (window.location.hash === '' || window.location.hash === '#home') {
+      carregarCatalogoHome(document.getElementById('app-content'));
+    } else {
+      window.navegar('home');
+    }
+  });
+}
+
 /**
  * Página de UMA campanha: as fichas da mesa, ao vivo, em cartões -- e não
  * o resumo apertado do popup. É daqui que o mestre abre a ficha inteira.
  */
-export async function renderPaginaCampanha(container, campanhaId) {
+export async function renderPaginaCampanha(container, parametro) {
+  const [idCodificado, visaoPedida] = String(parametro || '').split('/');
+  let campanhaId;
+  try { campanhaId = decodeURIComponent(idCodificado); } catch { campanhaId = ''; }
   if (!campanhaId) { window.navegar('campanhas'); return; }
+  const rota = window.location.hash;
+  container.innerHTML = '<p class="campanha-aviso">Verificando sua conta…</p>';
+  await iniciarAuth();
+  if (window.location.hash !== rota) return;
   container.innerHTML = '<p class="campanha-aviso">Carregando a mesa…</p>';
   const dados = await carregarCampanha(campanhaId);
-  if (!dados.ok) { container.innerHTML = `<p class="campanha-erro">${escHtml(dados.erro)}</p>`; return; }
+  if (!dados.ok) {
+    if (!getUsuario()) _aguardandoSessaoNaRota = rota;
+    container.innerHTML = `<p class="campanha-erro">${escHtml(dados.erro)}</p>`;
+    return;
+  }
+  _aguardandoSessaoNaRota = '';
   const { campanha, membros, papel } = dados;
+  const visao = papel === 'mestre' && visaoPedida !== 'jogador' ? 'mestre' : 'jogador';
 
   container.innerHTML = `
     <div class="campanha-pagina-topo">
       <h2>${escHtml(campanha.nome || 'Campanha')}</h2>
       <div class="campanha-cartao-acoes">
-        <button class="btn btn-sm btn-secondary" data-add-ficha="${escHtml(campanhaId)}">Adicionar minha ficha</button>
+        <button class="btn btn-sm btn-secondary" data-add-ficha="${escHtml(campanhaId)}">Enviar meu personagem</button>
         <button class="btn btn-sm btn-secondary" data-criar-ficha="${escHtml(campanhaId)}">Criar uma ficha</button>
+        ${papel === 'mestre' ? `<button class="btn btn-sm btn-danger" data-excluir-campanha="${escHtml(campanhaId)}" data-nome-campanha="${escHtml(campanha.nome || 'Campanha')}">Excluir campanha</button>` : ''}
+        ${visao === 'mestre' ? '<button class="btn btn-sm btn-danger" id="btn-remover-todas-fichas">Remover todas as fichas</button>' : ''}
       </div>
     </div>
     <div class="campanha-mesa-topo">
       <span class="campanha-papel">${papel === 'mestre' ? '🎩 Você é o mestre' : '🎭 Jogador'}</span>
+      <span class="campanha-papel">Visão do ${visao}</span>
+      ${papel === 'mestre' ? `<button class="btn btn-sm btn-secondary" data-trocar-visao="${visao === 'mestre' ? 'jogador' : 'mestre'}">Visão do ${visao === 'mestre' ? 'jogador' : 'mestre'}</button>` : ''}
       <span class="campanha-membros">${membros.length} na mesa</span>
-      ${campanha.codigo ? `<span class="campanha-codigo-inline" title="Código de convite">${escHtml(campanha.codigo)}</span>` : ''}
     </div>
     <div id="campanha-mesa"><p class="campanha-aviso">Carregando as fichas…</p></div>`;
 
   ligarBotoesDoCartao(container);
+  container.querySelector('[data-trocar-visao]')?.addEventListener('click', (e) => {
+    window.navegar(`campanha/${encodeURIComponent(campanhaId)}/${e.currentTarget.dataset.trocarVisao}`);
+  });
 
   pararEscuta();
+  let revisao = 0;
+  let fichasAtuais = [];
+  container.querySelector('#btn-remover-todas-fichas')?.addEventListener('click', () => confirmarRemocaoDeFichas(campanhaId, fichasAtuais));
   _pararDeAcompanhar = acompanharPersonagens(campanhaId,
-    (personagens) => {
+    async (personagens) => {
+      const atual = ++revisao;
       const alvo = document.getElementById('campanha-mesa');
       if (!alvo) return;
-      alvo.innerHTML = gradeDeFichas(personagens, papel, campanhaId);
-      ligarAcoesDoMestre(campanhaId, personagens, papel);
+      fichasAtuais = personagens;
+      if (papel === 'mestre') atualizarPerfisDaCampanha(campanhaId, personagens);
+      if (visao === 'jogador') {
+        alvo.innerHTML = gradeDeJogadores(personagens, papel);
+        ligarRemocaoDeFichas(alvo, campanhaId, personagens);
+        return;
+      }
+      const nomesClasses = [...new Set(personagens.flatMap((p) => classesDe(p).map((c) => c.classe)).filter(Boolean))];
+      const dadosClasses = await Promise.all(nomesClasses.map(async (nome) => [nome, await getClasse(nome)]));
+      if (atual !== revisao || !alvo.isConnected) return;
+      alvo.innerHTML = gradeDeFichas(personagens, visao, new Map(dadosClasses));
+      ligarRemocaoDeFichas(alvo, campanhaId, personagens);
+      ligarAcoesDoMestre(campanhaId, personagens, visao);
       alvo.querySelectorAll('[data-abrir-ficha]').forEach((el) => {
         el.addEventListener('click', () =>
-          window.navegar(`fichacampanha/${campanhaId}/${el.dataset.abrirFicha}`));
+          window.navegar(`ficha/campanha/${encodeURIComponent(campanhaId)}/${encodeURIComponent(el.dataset.abrirFicha)}`));
       });
     },
     (erro) => {
       const alvo = document.getElementById('campanha-mesa');
       if (alvo) alvo.innerHTML = `<p class="campanha-erro">${escHtml(erro)}</p>`;
+    }, papel !== 'mestre');
+}
+
+/** Exibe apenas informações públicas dos personagens na visão de jogador. */
+function gradeDeJogadores(personagens, papel) {
+  if (!personagens.length) return '<p class="campanha-aviso">Nenhum personagem na mesa ainda.</p>';
+  return `<div class="campanha-grade">${personagens.map((p) => {
+    const nome = p.nome || 'Sem nome';
+    const classe = Array.isArray(p.classes) && p.classes.length
+      ? p.classes.map((c) => `${c.classe || ''} ${c.nivel || ''}`.trim()).join(' / ')
+      : [p.classe, p.nivel].filter(Boolean).join(' ');
+    return `<div class="campanha-cartao"><div class="campanha-perfil">
+      <div class="char-avatar">${p.imagem ? `<img src="${escHtml(p.imagem)}" alt="">` : escHtml(nome.charAt(0).toUpperCase())}</div>
+      <div><h3>${escHtml(nome)}</h3><p class="campanha-cartao-sub">${escHtml(classe || '—')}</p></div>
+    </div>${papel !== 'mestre' && p.dono_uid === getUsuario()?.uid ? `<button class="btn btn-sm btn-danger" data-remover-ficha="${escHtml(p.id)}">Remover minha ficha</button>` : ''}</div>`;
+  }).join('')}</div>`;
+}
+
+/** Liga a remoção às fichas visíveis para o mestre ou para o próprio dono. */
+function ligarRemocaoDeFichas(alvo, campanhaId, personagens) {
+  alvo.querySelectorAll('[data-remover-ficha]').forEach((botao) => {
+    botao.addEventListener('click', () => {
+      const ficha = personagens.find((p) => p.id === botao.dataset.removerFicha);
+      if (ficha) confirmarRemocaoDeFichas(campanhaId, [ficha]);
     });
+  });
+}
+
+/** Pede confirmação antes de remover as cópias da campanha. */
+function confirmarRemocaoDeFichas(campanhaId, personagens) {
+  const fichas = [...personagens];
+  if (!fichas.length) { toast('Nenhuma ficha para remover.', 'info'); return; }
+  const descricao = fichas.length === 1 ? `a ficha de <strong>${escHtml(fichas[0].nome || 'personagem')}</strong>` : `as ${fichas.length} fichas da campanha`;
+  abrirModal('Remover fichas da campanha', `<p>Remover ${descricao} da campanha?</p><p>As fichas privadas dos jogadores serão mantidas.</p>`,
+    '<button class="btn btn-danger" id="btn-confirmar-remover-fichas">Remover</button><button class="btn btn-secondary" onclick="fecharModal()">Cancelar</button>');
+  document.getElementById('btn-confirmar-remover-fichas')?.addEventListener('click', async (evento) => {
+    const botao = evento.currentTarget;
+    botao.disabled = true;
+    let removidas = 0;
+    for (const ficha of fichas) {
+      const resultado = await removerPersonagemDaCampanha(campanhaId, ficha.id);
+      if (!resultado.ok) {
+        botao.disabled = false;
+        toast(`${removidas} de ${fichas.length} removidas. ${resultado.erro}`, 'error');
+        return;
+      }
+      removidas++;
+    }
+    window.fecharModal();
+    toast(`${removidas} ficha${removidas === 1 ? '' : 's'} removida${removidas === 1 ? '' : 's'} da campanha.`, 'success');
+  });
 }
 
 /** Cartões das fichas da mesa, com acesso à ficha inteira. */
-function gradeDeFichas(personagens, papel, campanhaId) {
+function gradeDeFichas(personagens, papel, dadosClasses) {
   if (!personagens.length) {
     return '<p class="campanha-aviso">Nenhuma ficha na mesa ainda. Use "Adicionar minha ficha" ou "Criar uma ficha" acima.</p>';
   }
-  const resumos = ordenarParaMestre(personagens.map(resumoDoPersonagem));
+  const resumos = ordenarParaMestre(personagens.map((p) => {
+    const copia = JSON.parse(JSON.stringify(p));
+    migrarEspacosDeMagia(copia);
+    return { ...resumirFicha(p), reservas: montarReservasDeEspacos(copia, dadosClasses),
+      concentracao: p.efeitos_magicos?.find((e) => e.concentracao)?.nome?.replace(/ \(.*\)$/, '') || '' };
+  }));
   return `<div class="campanha-grade">${resumos.map((r) => cartaoDeFicha(r, papel)).join('')}</div>`;
 }
 
@@ -443,12 +570,20 @@ function cartaoDeFicha(r, papel) {
         <span class="campanha-pv">${r.pvAtual}/${r.pvMax} PV</span>
         <span class="campanha-ca">CA ${r.ca}</span>
       </div>
-      ${r.condicoes.length ? `<div class="campanha-condicoes">${r.condicoes.map((c) => `<span class="campanha-condicao">${escHtml(c)}</span>`).join('')}</div>` : ''}
+      ${papel === 'mestre' ? `
+        <div class="campanha-resumo-magia">
+          <strong>Espaços de magia</strong>
+          ${r.reservas.length ? r.reservas.map((reserva) => `<div class="campanha-reserva"><span>${reserva.circulo}º círculo${reserva.fonte === 'pacto' ? ' · Pacto' : ''}</span> <span aria-label="${reserva.disponiveis} de ${reserva.total} espaços disponíveis" title="${reserva.disponiveis} de ${reserva.total} disponíveis">${'●'.repeat(reserva.usados)}${'○'.repeat(reserva.disponiveis)}</span></div>`).join('') : '<span>Sem espaços de magia</span>'}
+          <span><strong>Concentração:</strong> ${r.concentracao ? escHtml(r.concentracao) : 'Não'}</span>
+          <span><strong>Condições:</strong> ${r.condicoes.length ? r.condicoes.map(escHtml).join(', ') : 'Nenhuma'}</span>
+        </div>` : ''}
+      ${papel !== 'mestre' && r.condicoes.length ? `<div class="campanha-condicoes">${r.condicoes.map((c) => `<span class="campanha-condicao">${escHtml(c)}</span>`).join('')}</div>` : ''}
       <div class="campanha-cartao-acoes">
         <button class="btn btn-sm btn-primary" data-abrir-ficha="${escHtml(r.id)}">Acessar Ficha</button>
         ${papel === 'mestre' ? `
           <button class="btn btn-sm btn-danger" data-mestre-dano="${escHtml(r.id)}">− Dano</button>
           <button class="btn btn-sm btn-secondary" data-mestre-cura="${escHtml(r.id)}">+ Cura</button>` : ''}
+        ${papel === 'mestre' ? `<button class="btn btn-sm btn-danger" data-remover-ficha="${escHtml(r.id)}">Remover ficha</button>` : ''}
       </div>
     </div>`;
 }
@@ -463,10 +598,16 @@ function cartaoDeFicha(r, papel) {
  * @param {string} param "campanhaId/personagemId", como o router entrega.
  */
 export async function renderFichaDeCampanha(container, param) {
-  const [campanhaId, personagemId] = String(param || '').split('/');
+  const [campanhaId, personagemId] = String(param || '').split('/').map((parte) => {
+    try { return decodeURIComponent(parte); } catch { return ''; }
+  });
   if (!campanhaId || !personagemId) { window.navegar('campanhas'); return; }
   pararEscuta(); // a mesa ficou para trás; a escuta dela não pode sobreviver
 
+  const rota = window.location.hash;
+  container.innerHTML = '<p class="campanha-aviso">Verificando sua conta…</p>';
+  await iniciarAuth();
+  if (window.location.hash !== rota) return;
   container.innerHTML = '<p class="campanha-aviso">Carregando a ficha…</p>';
   const p = await buscarPersonagemDaCampanha(campanhaId, personagemId);
   if (!p) {
@@ -476,6 +617,11 @@ export async function renderFichaDeCampanha(container, param) {
         <p>Ela pode ter saído da mesa, ou você não é membro desta campanha.</p>
         <button class="btn btn-primary" onclick="navegar('campanhas')">Voltar</button>
       </div>`;
+    return;
+  }
+  const acesso = await carregarCampanha(campanhaId);
+  if (!acesso.ok || (acesso.papel !== 'mestre' && p.dono_uid !== getUsuario()?.uid)) {
+    container.innerHTML = '<div class="empty-state"><h2>Ficha indisponível</h2><p>Você só pode acessar seu próprio personagem.</p><button class="btn btn-primary" onclick="navegar(\'home\')">Voltar</button></div>';
     return;
   }
   await renderSheet(container, personagemId, { personagem: p, campanhaId });

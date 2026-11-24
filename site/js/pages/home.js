@@ -47,7 +47,7 @@ export function renderHome(container) {
       renderHome._authRegistrado = true;
       onAuthChange(() => {
         // Re-renderizar ao mudar estado de auth
-        if (_containerRef) renderHome(_containerRef);
+        if (_containerRef && (!window.location.hash || window.location.hash === '#home')) renderHome(_containerRef);
       });
     }
   });
@@ -269,7 +269,7 @@ async function _sincronizarSeLogado(container, manual = false) {
 
     if (manual) {
       toast('Sincronizado com sucesso!', 'success');
-      renderHome(container);
+      if (!window.location.hash || window.location.hash === '#home') renderHome(container);
     } else {
       // Re-renderizar se houve mudança de IDs ou de conteúdo (atualizado_em)
       const mudou = listaMergida.length !== listaLocal.length ||
@@ -277,7 +277,7 @@ async function _sincronizarSeLogado(container, manual = false) {
           const l = mapaLocal.get(m.id);
           return !l || m.atualizado_em !== l.atualizado_em;
         });
-      if (mudou) renderHome(container);
+      if (mudou && (!window.location.hash || window.location.hash === '#home')) renderHome(container);
     }
   } catch (err) {
     console.warn('Erro na sincronizacao:', err);
